@@ -12,6 +12,9 @@ TMUX_SESSION="pocket-claude"
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 
+# Ensure tmux socket directory exists (TMUX_TMPDIR set by systemd environment)
+mkdir -p "${TMUX_TMPDIR:-$STATE_DIR/tmux}"
+
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> "$LOG_FILE"; }
 
 # Kill any stale session
@@ -26,26 +29,29 @@ chmod 600 "$STATE_DIR/state.json"
 
 # Determine resume flag
 RESUME_FILE="$STATE_DIR/resume_next"
-RESUME_FLAG=""
+SESSION_ID=""
 if [[ -f "$RESUME_FILE" ]]; then
-  SESSION_ID=$(cat "$RESUME_FILE")
+  RAW_ID=$(cat "$RESUME_FILE")
   rm -f "$RESUME_FILE"
-  # Strict UUID validation before using in any command
-  if [[ "$SESSION_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
-    RESUME_FLAG="--resume $SESSION_ID"
+  # Strict UUID v4 validation before using in any command
+  if [[ "$RAW_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+    SESSION_ID="$RAW_ID"
     log "Resuming session: $SESSION_ID"
   else
     log "WARNING: Invalid session ID in resume_next, starting fresh"
   fi
 fi
 
-# Build claude command — channels flag enables Telegram plugin
-CLAUDE_CMD="claude --channels plugin:telegram@claude-plugins-official $RESUME_FLAG"
+# Build args array — never interpolate session ID into a string
+CLAUDE_ARGS=(claude --channels plugin:telegram@claude-plugins-official)
+if [[ -n "$SESSION_ID" ]]; then
+  CLAUDE_ARGS+=(--resume "$SESSION_ID")
+fi
 
-log "Starting: $CLAUDE_CMD"
+log "Starting: ${CLAUDE_ARGS[*]}"
 
-# New detached tmux session
-tmux new-session -d -s "$TMUX_SESSION" "$CLAUDE_CMD"
+# New detached tmux session — args passed as array, not a shell string
+tmux new-session -d -s "$TMUX_SESSION" -- "${CLAUDE_ARGS[@]}"
 
 # Store tmux pid so systemd can track it
 TMUX_PID=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_pid}" | head -1)

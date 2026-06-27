@@ -5,6 +5,9 @@
 # process. systemd restarts it via start.sh, which picks up the file.
 set -euo pipefail
 
+# Must match the path set in pocket-claude.service Environment=TMUX_TMPDIR
+export TMUX_TMPDIR="$HOME/.pocket-claude/tmux"
+
 STATE_DIR="$HOME/.pocket-claude"
 RESUME_FILE="$STATE_DIR/resume_next"
 TMUX_SESSION="pocket-claude"

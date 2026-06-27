@@ -5,6 +5,9 @@
 # Also sends an Oracle keep-alive ping to prevent idle-VM reclamation.
 set -euo pipefail
 
+# Must match the path set in pocket-claude.service Environment=TMUX_TMPDIR
+export TMUX_TMPDIR="$HOME/.pocket-claude/tmux"
+
 TMUX_SESSION="pocket-claude"
 LOG_FILE="$HOME/.pocket-claude/watchdog.log"
 
@@ -18,9 +21,8 @@ fi
 # Check tmux session exists
 if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
   log "WARNING: tmux session '$TMUX_SESSION' not found. Triggering systemd restart."
-  systemctl --user restart pocket-claude 2>/dev/null || \
-    sudo systemctl restart pocket-claude 2>/dev/null || \
-    log "ERROR: Could not restart pocket-claude service"
+  sudo systemctl restart pocket-claude 2>/dev/null || \
+    log "ERROR: Could not restart pocket-claude service. Check sudoers: /etc/sudoers.d/pocket-claude"
   exit 0
 fi
 
@@ -28,15 +30,13 @@ fi
 PANE_PID=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_pid}" 2>/dev/null | head -1)
 if [[ -z "$PANE_PID" ]]; then
   log "WARNING: No panes in session. Restarting."
-  systemctl --user restart pocket-claude 2>/dev/null || \
-    sudo systemctl restart pocket-claude 2>/dev/null || true
+  sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
 
 if ! pgrep -P "$PANE_PID" claude > /dev/null 2>&1; then
   log "WARNING: Claude process not found under pane pid $PANE_PID. Restarting."
-  systemctl --user restart pocket-claude 2>/dev/null || \
-    sudo systemctl restart pocket-claude 2>/dev/null || true
+  sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
 

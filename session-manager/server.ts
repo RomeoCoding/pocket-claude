@@ -23,6 +23,8 @@ import { listSessions, formatSessionList, isValidSessionId } from './sessions.ts
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
+const TMUX_TMPDIR = join(homedir(), '.pocket-claude', 'tmux')
+const tmuxEnv = { ...process.env, TMUX_TMPDIR }
 
 process.on('unhandledRejection', err => {
   process.stderr.write(`session-manager: unhandled rejection: ${err}\n`)
@@ -34,6 +36,7 @@ process.on('uncaughtException', err => {
 function tmuxRunning(): boolean {
   const result = spawnSync('tmux', ['has-session', '-t', TMUX_SESSION], {
     stdio: 'ignore',
+    env: tmuxEnv,
   })
   return result.status === 0
 }
@@ -44,7 +47,7 @@ function claudeRunning(): boolean {
   const result = spawnSync(
     'tmux',
     ['list-panes', '-t', TMUX_SESSION, '-F', '#{pane_pid}'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: tmuxEnv },
   )
   if (result.status !== 0 || !result.stdout.trim()) return false
 
@@ -75,6 +78,7 @@ function switchSession(sessionId: string, isNew: boolean): void {
   execFileSync('bash', [switchScript, isNew ? '--new' : '--resume', ...(isNew ? [] : [sessionId])], {
     timeout: 5000,
     stdio: 'ignore',
+    env: tmuxEnv,
   })
 }
 

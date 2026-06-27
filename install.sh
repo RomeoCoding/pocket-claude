@@ -2,8 +2,9 @@
 # pocket-claude installer
 # One-command setup: Ubuntu VM → fully running Claude Code on Telegram
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh | bash
+# Usage (interactive terminal required):
+#   curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh -o install.sh
+#   bash install.sh
 #   — or —
 #   git clone https://github.com/romeocoding/pocket-claude && cd pocket-claude && bash install.sh
 #
@@ -14,7 +15,6 @@ set -euo pipefail
 
 REPO="https://github.com/romeocoding/pocket-claude"
 INSTALL_DIR="/opt/pocket-claude"
-STATE_DIR="$HOME/.pocket-claude"
 CLAUDE_USER="claude"
 MIN_NODE_VERSION=22
 
@@ -32,6 +32,18 @@ section() { echo -e "\n${BOLD}── $* ──${NC}"; }
 # ── Preflight checks ─────────────────────────────────────────────────────────
 
 section "Preflight"
+
+# Require interactive terminal — piped installs break the prompts
+if [[ ! -t 0 ]]; then
+  echo ""
+  echo -e "${RED}ERROR:${NC} This installer requires an interactive terminal."
+  echo ""
+  echo "Download and run it directly:"
+  echo "  curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh -o install.sh"
+  echo "  bash install.sh"
+  echo ""
+  exit 1
+fi
 
 [[ "$(uname -s)" == "Linux" ]] || error "Linux only."
 [[ -f /etc/os-release ]] && source /etc/os-release || true
@@ -52,14 +64,14 @@ section "Installing dependencies"
 
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
-  curl git tmux jq \
+  curl git tmux jq cron unzip \
   ca-certificates gnupg2 \
   ufw fail2ban
 
 # Node.js (via NodeSource)
-if ! command -v node &>/dev/null || [[ "$(node -e 'process.exit(Number(process.version.slice(1).split(".")[0]) < '"$MIN_NODE_VERSION"')')" ]]; then
+if ! command -v node &>/dev/null || ! node -e "if(parseInt(process.version.slice(1))<$MIN_NODE_VERSION)process.exit(1)" 2>/dev/null; then
   info "Installing Node.js $MIN_NODE_VERSION..."
-  curl -fsSL https://deb.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash - -qq
+  curl -fsSL https://deb.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash -
   sudo apt-get install -y -qq nodejs
 fi
 
@@ -74,14 +86,28 @@ if ! command -v claude &>/dev/null; then
 fi
 info "Claude Code: $(claude --version 2>/dev/null || echo 'installed')"
 
+# Bun (required for the official Telegram plugin)
+if ! command -v bun &>/dev/null; then
+  info "Installing Bun (required for Telegram plugin)..."
+  curl -fsSL https://bun.sh/install | sudo -E HOME=/root bash - 2>/dev/null
+  if [[ -f /root/.bun/bin/bun ]]; then
+    sudo ln -sf /root/.bun/bin/bun /usr/local/bin/bun
+  fi
+fi
+if command -v bun &>/dev/null; then
+  info "Bun: $(bun --version)"
+else
+  warn "Bun not found after install attempt. The Telegram plugin may not work."
+fi
+
 # ── Create claude user ────────────────────────────────────────────────────────
 
 section "Setting up claude user"
 
 if ! id "$CLAUDE_USER" &>/dev/null; then
   info "Creating user '$CLAUDE_USER'..."
-  sudo useradd -m -s /bin/bash -G sudo "$CLAUDE_USER"
-  # Disable password login for the claude user — key-based SSH only
+  sudo useradd -m -s /bin/bash "$CLAUDE_USER"
+  # Disable password login — key-based SSH only, sudo via sudoers rules
   sudo passwd -l "$CLAUDE_USER"
 fi
 
@@ -92,9 +118,11 @@ info "Home: $CLAUDE_HOME"
 
 section "Installing pocket-claude"
 
-if [[ -d "$INSTALL_DIR" ]]; then
+if [[ -d "$INSTALL_DIR/.git" ]]; then
   info "Updating existing install..."
-  sudo git -C "$INSTALL_DIR" pull --quiet
+  sudo git -C "$INSTALL_DIR" pull --quiet || warn "git pull skipped (no remote configured)"
+elif [[ -d "$INSTALL_DIR" ]]; then
+  info "Using existing install directory."
 else
   info "Cloning pocket-claude..."
   sudo git clone --quiet "$REPO" "$INSTALL_DIR"
@@ -109,7 +137,7 @@ sudo chmod +x "$INSTALL_DIR"/daemon/*.sh "$INSTALL_DIR"/security/*.sh
 section "Installing session manager"
 
 cd "$INSTALL_DIR/session-manager"
-sudo npm ci --quiet
+sudo npm install --quiet
 cd - > /dev/null
 
 # ── State directory for claude user ──────────────────────────────────────────
@@ -133,38 +161,51 @@ section "Configuring Claude Code"
 
 CLAUDE_CONFIG_DIR="$CLAUDE_HOME/.claude"
 sudo -u "$CLAUDE_USER" mkdir -p "$CLAUDE_CONFIG_DIR"
-
-# Inject session manager as MCP server in Claude Code settings
 SETTINGS_FILE="$CLAUDE_CONFIG_DIR/settings.json"
-if sudo -u "$CLAUDE_USER" test -f "$SETTINGS_FILE"; then
-  # Merge: add session-manager if not already present
-  sudo -u "$CLAUDE_USER" bash -c "
-    jq '.mcpServers[\"pocket-claude-sessions\"] = {
-      \"command\": \"node\",
-      \"args\": [\"--experimental-strip-types\", \"$INSTALL_DIR/session-manager/server.ts\"]
-    }' '$SETTINGS_FILE' > '${SETTINGS_FILE}.tmp' && mv '${SETTINGS_FILE}.tmp' '$SETTINGS_FILE'
-  " 2>/dev/null || true
-else
-  sudo -u "$CLAUDE_USER" bash -c "cat > '$SETTINGS_FILE' << 'ENDJSON'
-{
-  \"mcpServers\": {
-    \"pocket-claude-sessions\": {
-      \"command\": \"node\",
-      \"args\": [\"--experimental-strip-types\", \"$INSTALL_DIR/session-manager/server.ts\"]
+
+# Build the base settings object using jq (avoids all shell quoting issues)
+NEW_SETTINGS=$(jq -n \
+  --arg install_dir "$INSTALL_DIR" \
+  '{
+    "theme": "dark",
+    "permissions": {
+      "allow": [
+        "mcp__plugin_telegram_telegram__reply",
+        "mcp__plugin_telegram_telegram__react",
+        "mcp__plugin_telegram_telegram__edit_message",
+        "mcp__plugin_telegram_telegram__download_attachment",
+        "Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "Glob(*)",
+        "WebSearch(*)", "WebFetch(*)"
+      ]
+    },
+    "mcpServers": {
+      "pocket-claude-sessions": {
+        "command": "node",
+        "args": ["--experimental-strip-types", ($install_dir + "/session-manager/server.ts")]
+      }
     }
-  }
-}
-ENDJSON"
+  }'
+)
+
+if sudo -u "$CLAUDE_USER" test -f "$SETTINGS_FILE"; then
+  # Merge: our settings take precedence so permissions/mcpServers are always correct
+  MERGED=$(sudo cat "$SETTINGS_FILE" | jq --argjson new "$NEW_SETTINGS" '. * $new')
+  echo "$MERGED" | sudo -u "$CLAUDE_USER" tee "$SETTINGS_FILE" > /dev/null
+  info "Settings merged."
+else
+  echo "$NEW_SETTINGS" | sudo -u "$CLAUDE_USER" tee "$SETTINGS_FILE" > /dev/null
+  info "Settings created."
 fi
-sudo -u "$CLAUDE_USER" chmod 600 "$SETTINGS_FILE"
+sudo chmod 600 "$SETTINGS_FILE"
 
 # ── Telegram bot token ────────────────────────────────────────────────────────
 
 section "Telegram configuration"
 
-TELEGRAM_ENV="$CLAUDE_CONFIG_DIR/channels/telegram/.env"
-sudo -u "$CLAUDE_USER" mkdir -p "$(dirname "$TELEGRAM_ENV")"
-sudo -u "$CLAUDE_USER" chmod 700 "$(dirname "$TELEGRAM_ENV")"
+TELEGRAM_DIR="$CLAUDE_CONFIG_DIR/channels/telegram"
+TELEGRAM_ENV="$TELEGRAM_DIR/.env"
+sudo -u "$CLAUDE_USER" mkdir -p "$TELEGRAM_DIR"
+sudo chmod 700 "$TELEGRAM_DIR"
 
 if sudo -u "$CLAUDE_USER" test -f "$TELEGRAM_ENV"; then
   info "Telegram token already configured."
@@ -176,16 +217,52 @@ else
 
   # Validate format before writing
   if [[ ! "$BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{35,}$ ]]; then
-    error "Token format looks wrong. Re-run install.sh and enter the correct token."
+    error "Token format looks wrong. Expected: 123456789:AAH... Re-run install.sh and try again."
+  fi
+
+  # Show masked confirmation so user can verify they pasted the right token
+  TOKEN_PREVIEW="${BOT_TOKEN:0:10}***${BOT_TOKEN: -4}"
+  echo "Token received: $TOKEN_PREVIEW"
+  read -r -p "Does that look right? [Y/n]: " TOKEN_OK
+  if [[ ! "${TOKEN_OK:-Y}" =~ ^[Yy]?$ ]]; then
+    error "Cancelled. Re-run install.sh and enter the correct token."
   fi
 
   # Write without BOM, 600 perms
-  sudo -u "$CLAUDE_USER" bash -c "
-    printf 'TELEGRAM_BOT_TOKEN=%s\n' '$BOT_TOKEN' > '$TELEGRAM_ENV'
-    chmod 600 '$TELEGRAM_ENV'
-  "
+  printf 'TELEGRAM_BOT_TOKEN=%s\n' "$BOT_TOKEN" | sudo -u "$CLAUDE_USER" tee "$TELEGRAM_ENV" > /dev/null
+  sudo chmod 600 "$TELEGRAM_ENV"
   unset BOT_TOKEN
   info "Token saved."
+fi
+
+# ── Telegram access control ───────────────────────────────────────────────────
+
+section "Telegram access control"
+
+ACCESS_FILE="$TELEGRAM_DIR/access.json"
+
+if sudo -u "$CLAUDE_USER" test -f "$ACCESS_FILE"; then
+  info "Access control already configured."
+else
+  echo ""
+  echo "Who should be able to use your bot?"
+  echo ""
+  echo "You need your Telegram user ID (a number, NOT your username)."
+  echo "  1. Open Telegram and message @userinfobot"
+  echo "  2. It will reply with your user ID (e.g. 6765294456)"
+  echo ""
+  read -r -p "Enter your Telegram user ID: " TELEGRAM_USER_ID
+
+  # Validate: must be a positive integer
+  if [[ ! "$TELEGRAM_USER_ID" =~ ^[0-9]{5,}$ ]]; then
+    error "Invalid Telegram user ID. It should be a number like 6765294456."
+  fi
+
+  # Write access.json — allowlist mode, only this ID can DM the bot
+  printf '{"dmPolicy":"allowlist","allowFrom":["%s"],"groups":{},"pending":{}}\n' \
+    "$TELEGRAM_USER_ID" | sudo -u "$CLAUDE_USER" tee "$ACCESS_FILE" > /dev/null
+  sudo chmod 600 "$ACCESS_FILE"
+  info "Bot locked to Telegram user ID $TELEGRAM_USER_ID"
 fi
 
 # ── systemd service ───────────────────────────────────────────────────────────
@@ -195,13 +272,26 @@ section "Installing systemd service"
 sudo install -m 644 "$INSTALL_DIR/daemon/pocket-claude.service" \
   /etc/systemd/system/pocket-claude.service
 
-# Patch User= to match CLAUDE_USER
+# Patch User=/Group= and all /home/claude paths to match actual CLAUDE_HOME
 sudo sed -i "s/^User=.*/User=$CLAUDE_USER/" /etc/systemd/system/pocket-claude.service
 sudo sed -i "s/^Group=.*/Group=$CLAUDE_USER/" /etc/systemd/system/pocket-claude.service
 sudo sed -i "s|/home/claude|$CLAUDE_HOME|g" /etc/systemd/system/pocket-claude.service
 
 sudo systemctl daemon-reload
 sudo systemctl enable pocket-claude
+
+# ── Sudoers rule for watchdog ──────────────────────────────────────────────────
+
+# Allow the claude user to restart the service from the watchdog cron job
+SUDOERS_FILE="/etc/sudoers.d/pocket-claude"
+echo "$CLAUDE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart pocket-claude, /usr/bin/systemctl start pocket-claude" \
+  | sudo tee "$SUDOERS_FILE" > /dev/null
+sudo chmod 440 "$SUDOERS_FILE"
+sudo visudo -c -f "$SUDOERS_FILE" > /dev/null 2>&1 || {
+  sudo rm -f "$SUDOERS_FILE"
+  warn "sudoers validation failed — watchdog will not be able to restart the service automatically."
+}
+info "Sudoers: claude can restart pocket-claude"
 
 # ── Watchdog cron ─────────────────────────────────────────────────────────────
 
@@ -223,9 +313,15 @@ info "Watchdog: runs every minute"
 section "Security hardening"
 
 echo ""
-read -r -p "Run security hardening now? (SSH key-only, UFW, fail2ban) [Y/n]: " RUN_HARDEN
+echo "This disables SSH password auth (key-only) and enables UFW + fail2ban."
+echo "IMPORTANT: Open a second SSH terminal and verify you can still connect"
+echo "before closing this session."
+echo ""
+read -r -p "Run security hardening now? [Y/n]: " RUN_HARDEN
 if [[ "${RUN_HARDEN:-Y}" =~ ^[Yy]?$ ]]; then
   sudo bash "$INSTALL_DIR/security/harden.sh"
+  echo ""
+  warn "SSH is now key-only. Verify access in a second terminal before closing this one."
 else
   warn "Skipped. Run later: sudo bash $INSTALL_DIR/security/harden.sh"
 fi
@@ -247,12 +343,66 @@ sudo -u "$CLAUDE_USER" -i claude auth login
 section "Starting pocket-claude"
 
 sudo systemctl start pocket-claude
-sleep 2
+sleep 5
 
 if sudo systemctl is-active --quiet pocket-claude; then
-  info "pocket-claude is running."
+  info "pocket-claude service is running."
 else
   warn "Service may not have started yet. Check: sudo journalctl -u pocket-claude -n 50"
+fi
+
+# ── Telegram plugin setup ──────────────────────────────────────────────────────
+
+section "Installing Telegram plugin"
+
+echo ""
+echo "The Telegram plugin must be installed through Claude Code's own UI."
+echo "This will happen automatically — watch the steps below."
+echo ""
+
+TMUX_SOCK="$CLAUDE_HOME/.pocket-claude/tmux/default"
+TMUX_CMD=(sudo -u "$CLAUDE_USER" tmux -S "$TMUX_SOCK")
+
+# Wait for tmux socket to appear (up to 60s)
+info "Waiting for Claude Code to initialize..."
+for i in {1..60}; do
+  if [[ -S "$TMUX_SOCK" ]]; then break; fi
+  sleep 1
+done
+
+if [[ ! -S "$TMUX_SOCK" ]]; then
+  warn "tmux socket not found at $TMUX_SOCK"
+  warn "Plugin must be installed manually — see instructions below."
+  PLUGIN_AUTO=false
+else
+  # Handle first-run UI (theme picker / welcome screen) by pressing Enter
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude '' Enter 2>/dev/null || true
+  sleep 3
+
+  # Open plugin browser
+  info "Opening plugin browser..."
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude '/plugins' Enter 2>/dev/null
+  sleep 5
+
+  # Search for telegram
+  info "Searching for Telegram plugin..."
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude 'telegram' 2>/dev/null
+  sleep 3
+
+  # Select first result (Space) then install (i)
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude ' ' 2>/dev/null
+  sleep 1
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude 'i' 2>/dev/null
+
+  info "Installing Telegram plugin (downloading ~30s)..."
+  sleep 40
+
+  # Reload
+  "${TMUX_CMD[@]}" send-keys -t pocket-claude '/reload-plugins' Enter 2>/dev/null
+  sleep 5
+
+  PLUGIN_AUTO=true
+  info "Plugin install commands sent."
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -262,16 +412,36 @@ section "Setup complete"
 echo ""
 echo -e "${GREEN}pocket-claude is installed and running.${NC}"
 echo ""
-echo "  DM @$(sudo -u "$CLAUDE_USER" bash -c "source $TELEGRAM_ENV 2>/dev/null; curl -s https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/getMe | jq -r '.result.username // \"your-bot\"'")"
-echo "  to reach your Claude Code session from anywhere."
+
+if [[ "${PLUGIN_AUTO:-false}" == "true" ]]; then
+  echo "The Telegram plugin install was triggered automatically."
+  echo "If it didn't complete, follow the manual steps:"
+  echo ""
+else
+  echo -e "${YELLOW}ACTION REQUIRED — install the Telegram plugin manually:${NC}"
+  echo ""
+fi
+
+echo "  Manual plugin install (if needed):"
+echo "    1. SSH into the VM and run:"
+echo "         sudo -u $CLAUDE_USER tmux -S $CLAUDE_HOME/.pocket-claude/tmux/default attach -t pocket-claude"
+echo "    2. Type:  /plugins"
+echo "    3. Type:  telegram  (to search)"
+echo "    4. Press: Space  (to select telegram@claude-plugins-official)"
+echo "    5. Press: i  (to install)"
+echo "    6. Wait ~30 seconds"
+echo "    7. Type:  /reload-plugins"
+echo "    8. Press: Ctrl+B then D  (to detach from tmux)"
 echo ""
 echo "Commands:"
-echo "  sudo systemctl status pocket-claude   — check status"
-echo "  sudo journalctl -u pocket-claude -f   — live logs"
-echo "  sudo systemctl restart pocket-claude  — restart"
-echo "  bash $INSTALL_DIR/security/rotate-token.sh <new-token>  — rotate bot token"
+echo "  sudo systemctl status pocket-claude       — check status"
+echo "  sudo journalctl -u pocket-claude -f       — live logs"
+echo "  sudo systemctl restart pocket-claude      — restart"
+echo "  sudo -u $CLAUDE_USER bash $INSTALL_DIR/security/rotate-token.sh <new-token>  — rotate bot token"
 echo ""
 echo "From Telegram, ask Claude:"
-echo "  'list my sessions'   — see recent conversations"
-echo "  'resume session 3'   — switch to that session"
+echo "  'list my sessions'     — see recent conversations"
+echo "  'resume session 3'     — switch to that session"
 echo "  'start a new session'"
+echo ""
+echo "  Open Telegram and DM your bot to start."

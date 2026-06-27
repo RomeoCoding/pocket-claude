@@ -50,8 +50,16 @@ sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication 
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
 sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$SSHD_CONFIG"
 
-# Add hardening directives if not present
-grep -q "^AllowUsers" "$SSHD_CONFIG" || echo "AllowUsers claude" >> "$SSHD_CONFIG"
+# Allow current invoking user + claude — preserves existing SSH access
+ALLOW_USER="${SUDO_USER:-}"
+if [[ -z "$ALLOW_USER" ]]; then
+  ALLOW_USER=$(logname 2>/dev/null || echo "")
+fi
+if [[ -n "$ALLOW_USER" && "$ALLOW_USER" != "root" ]]; then
+  grep -q "^AllowUsers" "$SSHD_CONFIG" || echo "AllowUsers $ALLOW_USER claude" >> "$SSHD_CONFIG"
+else
+  grep -q "^AllowUsers" "$SSHD_CONFIG" || echo "AllowUsers claude" >> "$SSHD_CONFIG"
+fi
 grep -q "^MaxAuthTries" "$SSHD_CONFIG" || echo "MaxAuthTries 3" >> "$SSHD_CONFIG"
 grep -q "^ClientAliveInterval" "$SSHD_CONFIG" || echo "ClientAliveInterval 300" >> "$SSHD_CONFIG"
 grep -q "^ClientAliveCountMax" "$SSHD_CONFIG" || echo "ClientAliveCountMax 2" >> "$SSHD_CONFIG"
