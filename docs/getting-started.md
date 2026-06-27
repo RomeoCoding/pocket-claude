@@ -24,7 +24,8 @@
 SSH into your VM, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RomeoCoding/pocket-claude/master/install.sh -o install.sh
+bash install.sh
 ```
 
 The installer will prompt you for:

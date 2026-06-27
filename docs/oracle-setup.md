@@ -56,7 +56,8 @@ ssh -i ~/.ssh/your-key ubuntu@<your-public-ip>
 ## 5. Run pocket-claude installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RomeoCoding/pocket-claude/master/install.sh -o install.sh
+bash install.sh
 ```
 
 The installer will:
