@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # pocket-claude watchdog
 # Runs every 60s via cron. Checks Claude is alive inside tmux.
-# If not, restarts via systemd (which handles backoff/limits).
-# Also sends an Oracle keep-alive ping to prevent idle-VM reclamation.
+# If not, restarts via systemd and notifies via Telegram.
+# Also pings a URL to keep Oracle Always Free VM from idle reclamation.
 set -euo pipefail
 
-# Must match the path set in pocket-claude.service Environment=TMUX_TMPDIR
 export TMUX_TMPDIR="$HOME/.pocket-claude/tmux"
 
 TMUX_SESSION="pocket-claude"
@@ -18,33 +17,55 @@ if [[ -f "$LOG_FILE" ]] && [[ $(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0) -gt
   mv "$LOG_FILE" "${LOG_FILE}.1"
 fi
 
+# Send a Telegram message to all allowlisted users
+notify_telegram() {
+  local msg="$1"
+  local token_file="$HOME/.claude/channels/telegram/.env"
+  local access_file="$HOME/.claude/channels/telegram/access.json"
+  [[ -f "$token_file" ]] && [[ -f "$access_file" ]] || return 0
+  local token
+  token=$(grep TELEGRAM_BOT_TOKEN "$token_file" 2>/dev/null | cut -d= -f2 || true)
+  [[ -z "$token" ]] && return 0
+  local user_ids
+  user_ids=$(jq -r '.allowFrom[]?' "$access_file" 2>/dev/null || true)
+  while IFS= read -r chat_id; do
+    [[ -z "$chat_id" ]] && continue
+    curl -sf "https://api.telegram.org/bot${token}/sendMessage" \
+      --data-urlencode "chat_id=${chat_id}" \
+      --data-urlencode "text=${msg}" \
+      -o /dev/null --max-time 10 || true
+  done <<< "$user_ids"
+}
+
+# Oracle Always Free keep-alive: generates real outbound network traffic.
+# A filesystem touch is NOT sufficient — Oracle monitors CPU/network metrics.
+curl -sf --max-time 10 https://1.1.1.1 -o /dev/null || true
+
 # Check tmux session exists
 if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
   log "WARNING: tmux session '$TMUX_SESSION' not found. Triggering systemd restart."
+  notify_telegram "⚠️ pocket-claude: tmux session not found — restarting"
   sudo systemctl restart pocket-claude 2>/dev/null || \
-    log "ERROR: Could not restart pocket-claude service. Check sudoers: /etc/sudoers.d/pocket-claude"
+    log "ERROR: Could not restart pocket-claude. Check sudoers: /etc/sudoers.d/pocket-claude"
   exit 0
 fi
 
-# Get the PID of the process running directly in the tmux pane (should be claude itself)
+# Get the PID of the process running directly in the tmux pane
 PANE_PID=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_pid}" 2>/dev/null | head -1)
 if [[ -z "$PANE_PID" ]]; then
   log "WARNING: No panes in session. Restarting."
+  notify_telegram "⚠️ pocket-claude: no tmux panes found — restarting"
   sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
 
-# When tmux is started with `-- claude ...`, the pane_pid IS the claude process.
-# Check that process is alive and is named 'claude'.
+# pane_pid IS the claude process when started with `tmux new-session -- claude`
 PROC_NAME=$(ps -p "$PANE_PID" -o comm= 2>/dev/null || true)
 if [[ "${PROC_NAME:-}" != "claude" ]]; then
   log "WARNING: Pane process is '${PROC_NAME:-dead}' (pid $PANE_PID), expected 'claude'. Restarting."
+  notify_telegram "⚠️ pocket-claude crashed (pid $PANE_PID was '${PROC_NAME:-gone}') — restarting"
   sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
-
-# Oracle keep-alive: write a tiny file to block idle detection
-# Oracle reclaims VMs it considers idle. A file write every minute prevents this.
-touch "$HOME/.pocket-claude/.keepalive"
 
 log "OK (claude pid=$PANE_PID)"

@@ -244,8 +244,10 @@ NEW_SETTINGS=$(jq -n \
 )
 
 if sudo -u "$CLAUDE_USER" test -f "$SETTINGS_FILE"; then
-  # Merge: our settings take precedence so permissions/mcpServers are always correct
-  MERGED=$(sudo cat "$SETTINGS_FILE" | jq --argjson new "$NEW_SETTINGS" '. * $new')
+  # Deep-merge settings, then explicitly union mcpServers so any pre-existing
+  # user MCP servers are preserved alongside ours (not overwritten)
+  MERGED=$(sudo cat "$SETTINGS_FILE" | jq --argjson new "$NEW_SETTINGS" \
+    '. * $new | .mcpServers = ((.mcpServers // {}) + $new.mcpServers)')
   echo "$MERGED" | sudo -u "$CLAUDE_USER" tee "$SETTINGS_FILE" > /dev/null
   info "Settings merged."
 else

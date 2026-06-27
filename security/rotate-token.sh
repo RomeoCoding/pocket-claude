@@ -15,7 +15,6 @@ fi
 
 NEW_TOKEN="$1"
 
-# Basic token format check: numeric-id:alphanum
 if [[ ! "$NEW_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{35,}$ ]]; then
   echo "ERROR: Token format looks wrong. Expected: 123456789:AAH..." >&2
   exit 1
@@ -26,17 +25,19 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Backup old token (for rollback)
-cp "$ENV_FILE" "${ENV_FILE}.bak.$(date +%s)"
-chmod 600 "${ENV_FILE}.bak."*
+# Keep only one backup — old backups contain old tokens and are a security risk
+BACKUP="${ENV_FILE}.bak"
+cp "$ENV_FILE" "$BACKUP"
+chmod 600 "$BACKUP"
+# Remove any older timestamped backups
+find "$(dirname "$ENV_FILE")" -maxdepth 1 -name '.env.bak.*' -delete 2>/dev/null || true
 
-# Write new token — printf avoids BOM, newline, and shell escaping issues
 printf 'TELEGRAM_BOT_TOKEN=%s\n' "$NEW_TOKEN" > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 echo "Token updated. Restarting pocket-claude..."
-systemctl --user restart pocket-claude 2>/dev/null || \
-  sudo systemctl restart pocket-claude 2>/dev/null || \
+# System unit — never user unit
+sudo systemctl restart pocket-claude || \
   { echo "Could not restart automatically. Run: sudo systemctl restart pocket-claude"; exit 1; }
 
 echo "Done. Test by DM-ing your bot."
