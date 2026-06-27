@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node --experimental-strip-types server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
