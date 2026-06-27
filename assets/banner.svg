@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 160">
+  <rect width="860" height="160" rx="8" fill="#0d1117"/>
+  <rect x="0" y="0" width="4" height="160" rx="2" fill="#238636"/>
+  <circle cx="30" cy="80" r="6" fill="#238636"/>
+  <text x="448" y="76" font-family="'Courier New',Courier,monospace" font-size="58" font-weight="bold" fill="#e6edf3" text-anchor="middle">pocket-claude</text>
+  <text x="448" y="120" font-family="'Courier New',Courier,monospace" font-size="14" fill="#8b949e" text-anchor="middle">Claude Code · Always On · Telegram · Free</text>
+</svg>

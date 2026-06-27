@@ -1,20 +1,7 @@
 <div align="center">
 
-```
- ____   ___   ____  _  __  _____  _____
-|  _ \ / _ \ / ___|| |/ / | ____||_   _|
-| |_) || | | || |   | ' /  |  _|    | |
-|  __/ | |_| || |___| . \  | |___   | |
-|_|     \___/  \____|_|\_\ |_____| |_|
-
-  ____  _        _    _   _ ____  _____
- / ___|| |      / \  | | | |  _ \| ____|
-| |    | |     / _ \ | | | | | | |  _|
-| |___ | |___ / ___ \| |_| | |_| | |___
- \____||_____/_/   \_\\___/|____/|_____|
-```
-
-**Claude Code · Always On · Telegram · Free**
+<img src="assets/banner.svg" alt="pocket-claude" width="100%"/>
+<br/>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-orange?logo=ubuntu)](https://ubuntu.com)
