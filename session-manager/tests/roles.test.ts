@@ -42,7 +42,7 @@ test('getUserRole returns member when role is member', async () => {
 test('setUserRole writes role to access.json', async () => {
   const { setUserRole, getUserRole } = await import('../roles.ts')
   writeAccess({ allowFrom: ['333'] })
-  setUserRole('333', 'admin')
+  await setUserRole('333', 'admin')
   assert.equal(getUserRole('333'), 'admin')
 })
 
