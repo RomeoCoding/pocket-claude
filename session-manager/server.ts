@@ -236,7 +236,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (idx < 0 || idx >= sessions.length) return { content: [{ type: 'text', text: `No session at index ${args.index}.` }], isError: true }
         const session = sessions[idx]
         const msgCount = typeof args.messages === 'number' ? Math.min(args.messages, 10) : 3
-        const preview = await getSessionPreview(session.id, msgCount)
+        const preview = await getSessionPreview(session.id, msgCount, session.filePath)
         const pin = session.pinned ? ' [P]' : ''
         return { content: [{ type: 'text', text: `Session ${args.index}${pin}: "${session.title}" [${formatAge(session.updatedAt)}]\n\n${preview}` }] }
       }
@@ -291,6 +291,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           return { content: [{ type: 'text', text: `${preview}\nCall again with confirmed: true to proceed.` }] }
         }
         if (typeof args.older_than_days === 'number') {
+          if (args.older_than_days < 1) {
+            return { content: [{ type: 'text', text: 'older_than_days must be at least 1 to prevent accidental deletion of all sessions.' }], isError: true }
+          }
           const count = await deleteOldSessions(args.older_than_days)
           return { content: [{ type: 'text', text: `Deleted ${count} session(s) older than ${args.older_than_days} days.` }] }
         }
@@ -338,14 +341,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const sessions = await listSessions(1)
           const latest = sessions[0]
           if (!latest) return { content: [{ type: 'text', text: 'No sessions found.' }] }
-          const preview = await getSessionPreview(latest.id, 2)
+          const preview = await getSessionPreview(latest.id, 2, latest.filePath)
           return { content: [{ type: 'text', text: `Most recent: "${latest.title}" [${formatAge(latest.updatedAt)}]\n\n${preview}` }] }
         }
 
         const sessions = await listSessions(50)
         const session = sessions.find(s => s.id === currentId)
         const title = session ? session.title : '(unknown)'
-        const preview = await getSessionPreview(currentId, 2)
+        const matchedSession = sessions.find(s => s.id === currentId)
+        const preview = await getSessionPreview(currentId, 2, matchedSession?.filePath)
         return { content: [{ type: 'text', text: [
           `Working on: "${title}"`,
           uptime !== null ? `Uptime: ${uptime}m` : '',
@@ -370,7 +374,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           return { content: [{ type: 'text', text: out.trim() || 'Update complete.' }] }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          return { content: [{ type: 'text', text: `Update failed: ${msg}\n\nSSH in and run: sudo bash ${INSTALL_DIR}/update.sh` }], isError: true }
+          const stderr = ((err as Record<string, unknown>).stderr as string | undefined) ?? ''
+          const detail = stderr.trim() ? `\n${stderr.trim()}` : ''
+          return { content: [{ type: 'text', text: `Update failed: ${msg}${detail}\n\nSSH in and run: sudo bash ${INSTALL_DIR}/update.sh` }], isError: true }
         }
       }
 

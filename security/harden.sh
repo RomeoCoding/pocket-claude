@@ -68,7 +68,11 @@ systemctl restart fail2ban
 
 echo "==> Hardening SSH..."
 SSHD_CONFIG="/etc/ssh/sshd_config"
-cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.$(date +%s)"
+SSHD_BAK="${SSHD_CONFIG}.bak.$(date +%s)"
+cp "$SSHD_CONFIG" "$SSHD_BAK"
+
+# If sshd -t fails below, restore the original config so SSH stays accessible
+trap 'echo "ERROR: sshd config validation failed — restoring $SSHD_BAK"; cp "$SSHD_BAK" "$SSHD_CONFIG"; systemctl reload sshd 2>/dev/null || systemctl reload sshd.service 2>/dev/null || true; echo "Original sshd config restored. SSH access preserved."' ERR
 
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONFIG"
 sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$SSHD_CONFIG"
@@ -105,8 +109,9 @@ grep -q "^MaxStartups"      "$SSHD_CONFIG" || echo "MaxStartups 10:30:60"    >> 
 grep -q "^ClientAliveInterval" "$SSHD_CONFIG" || echo "ClientAliveInterval 300" >> "$SSHD_CONFIG"
 grep -q "^ClientAliveCountMax" "$SSHD_CONFIG" || echo "ClientAliveCountMax 2"   >> "$SSHD_CONFIG"
 
-sshd -t  # Validate before reloading — exits non-zero if config is broken
+sshd -t  # Validate before reloading — exits non-zero if config is broken (trap fires)
 systemctl reload sshd 2>/dev/null || systemctl reload sshd.service 2>/dev/null || true
+trap - ERR  # Config is valid and loaded — clear the restore trap
 
 echo "==> Setting system-wide umask to 027..."
 grep -q "^umask 027" /etc/profile || echo "umask 027" >> /etc/profile

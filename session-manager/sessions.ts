@@ -9,6 +9,7 @@ export type Session = {
   updatedAt: Date
   projectPath: string
   pinned: boolean
+  filePath: string
 }
 
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects')
@@ -130,6 +131,7 @@ export async function listSessions(limit = 50): Promise<Session[]> {
           updatedAt: fileStat.mtime,
           projectPath: decodeURIComponent(projectDir.replace(/^[^-]+-/, '')),
           pinned: pinnedSet.has(id),
+          filePath,
         })
       } catch { continue }
     }
@@ -181,15 +183,13 @@ export async function searchSessions(query: string, limit = 10): Promise<Session
   const titleMatches = all.filter(s => s.title.toLowerCase().includes(q))
   if (titleMatches.length >= limit) return titleMatches.slice(0, limit)
 
-  // Then scan content of remaining sessions (first 16KB each)
+  // Then scan content of remaining sessions — filePath is cached on Session, no extra readdir calls
   const titleMatchIds = new Set(titleMatches.map(s => s.id))
   const contentMatches: Session[] = []
   for (const session of all.filter(s => !titleMatchIds.has(s.id))) {
     if (titleMatches.length + contentMatches.length >= limit) break
     try {
-      const filePath = await findSessionFile(session.id)
-      if (!filePath) continue
-      const { text } = await readHead(filePath, 16384)
+      const { text } = await readHead(session.filePath, 16384)
       if (text.toLowerCase().includes(q)) contentMatches.push(session)
     } catch { /* skip */ }
   }
@@ -197,8 +197,8 @@ export async function searchSessions(query: string, limit = 10): Promise<Session
   return [...titleMatches, ...contentMatches].slice(0, limit)
 }
 
-export async function getSessionPreview(sessionId: string, messageCount = 3): Promise<string> {
-  const filePath = await findSessionFile(sessionId)
+export async function getSessionPreview(sessionId: string, messageCount = 3, knownPath?: string): Promise<string> {
+  const filePath = knownPath ?? await findSessionFile(sessionId)
   if (!filePath) return '(session file not found)'
 
   const tail = await readTail(filePath, 16384)

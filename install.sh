@@ -325,8 +325,12 @@ fi
 
 # ── Login banner (MOTD) ──────────────────────────────────────────────────────
 
-sudo install -m 755 "$INSTALL_DIR/scripts/motd.sh" /etc/update-motd.d/01-pocket-claude
-info "MOTD: installed to /etc/update-motd.d/01-pocket-claude"
+if [[ -f "$INSTALL_DIR/scripts/motd.sh" ]]; then
+  sudo install -m 755 "$INSTALL_DIR/scripts/motd.sh" /etc/update-motd.d/01-pocket-claude
+  info "MOTD: installed to /etc/update-motd.d/01-pocket-claude"
+else
+  warn "scripts/motd.sh not found in $INSTALL_DIR — skipping MOTD install"
+fi
 
 # ── systemd service ───────────────────────────────────────────────────────────
 
