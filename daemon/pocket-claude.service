@@ -15,7 +15,7 @@ Environment=TMUX_TMPDIR=/home/claude/.pocket-claude/tmux
 
 # Start Claude in a detached tmux session
 ExecStart=/home/claude/.pocket-claude/start.sh
-ExecStop=/usr/bin/tmux -S /home/claude/.pocket-claude/tmux/default kill-session -t pocket-claude
+ExecStop=/usr/bin/tmux kill-session -t pocket-claude
 PIDFile=/home/claude/.pocket-claude/daemon.pid
 
 # Restart on any exit so session switches (which kill claude) auto-restart

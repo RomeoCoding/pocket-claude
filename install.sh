@@ -360,45 +360,50 @@ echo "The Telegram plugin must be installed through Claude Code's own UI."
 echo "This will happen automatically — watch the steps below."
 echo ""
 
-TMUX_SOCK="$CLAUDE_HOME/.pocket-claude/tmux/default"
-TMUX_CMD=(sudo -u "$CLAUDE_USER" tmux -S "$TMUX_SOCK")
+TMUX_DIR="$CLAUDE_HOME/.pocket-claude/tmux"
+# tmux creates socket at $TMUX_TMPDIR/tmux-<uid>/<name>
+TMUX_CMD=(sudo -u "$CLAUDE_USER" bash -c "export TMUX_TMPDIR=$TMUX_DIR; tmux")
 
-# Wait for tmux socket to appear (up to 60s)
+# Wait for tmux socket directory to populate (up to 60s)
 info "Waiting for Claude Code to initialize..."
 for i in {1..60}; do
-  if [[ -S "$TMUX_SOCK" ]]; then break; fi
+  if sudo -u "$CLAUDE_USER" bash -c "export TMUX_TMPDIR=$TMUX_DIR; tmux has-session -t pocket-claude 2>/dev/null"; then
+    break
+  fi
   sleep 1
 done
 
-if [[ ! -S "$TMUX_SOCK" ]]; then
-  warn "tmux socket not found at $TMUX_SOCK"
+if ! sudo -u "$CLAUDE_USER" bash -c "export TMUX_TMPDIR=$TMUX_DIR; tmux has-session -t pocket-claude 2>/dev/null"; then
+  warn "tmux session not found after 60s"
   warn "Plugin must be installed manually — see instructions below."
   PLUGIN_AUTO=false
 else
+  TSEND=(sudo -u "$CLAUDE_USER" bash -c "export TMUX_TMPDIR=$TMUX_DIR; tmux send-keys -t pocket-claude")
+
   # Handle first-run UI (theme picker / welcome screen) by pressing Enter
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude '' Enter 2>/dev/null || true
+  "${TSEND[@]}" '' Enter 2>/dev/null || true
   sleep 3
 
   # Open plugin browser
   info "Opening plugin browser..."
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude '/plugins' Enter 2>/dev/null
+  "${TSEND[@]}" '/plugins' Enter 2>/dev/null
   sleep 5
 
   # Search for telegram
   info "Searching for Telegram plugin..."
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude 'telegram' 2>/dev/null
+  "${TSEND[@]}" 'telegram' 2>/dev/null
   sleep 3
 
   # Select first result (Space) then install (i)
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude ' ' 2>/dev/null
+  "${TSEND[@]}" ' ' 2>/dev/null
   sleep 1
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude 'i' 2>/dev/null
+  "${TSEND[@]}" 'i' 2>/dev/null
 
   info "Installing Telegram plugin (downloading ~30s)..."
   sleep 40
 
   # Reload
-  "${TMUX_CMD[@]}" send-keys -t pocket-claude '/reload-plugins' Enter 2>/dev/null
+  "${TSEND[@]}" '/reload-plugins' Enter 2>/dev/null
   sleep 5
 
   PLUGIN_AUTO=true
@@ -424,7 +429,7 @@ fi
 
 echo "  Manual plugin install (if needed):"
 echo "    1. SSH into the VM and run:"
-echo "         sudo -u $CLAUDE_USER tmux -S $CLAUDE_HOME/.pocket-claude/tmux/default attach -t pocket-claude"
+echo "         sudo -u $CLAUDE_USER bash -c 'export TMUX_TMPDIR=$CLAUDE_HOME/.pocket-claude/tmux; tmux attach -t pocket-claude'"
 echo "    2. Type:  /plugins"
 echo "    3. Type:  telegram  (to search)"
 echo "    4. Press: Space  (to select telegram@claude-plugins-official)"
