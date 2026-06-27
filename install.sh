@@ -323,6 +323,28 @@ else
   info "Bot locked to Telegram user ID $TELEGRAM_USER_ID"
 fi
 
+# Set first user as admin if roles key is absent (fresh install only)
+if command -v python3 &>/dev/null; then
+  FIRST_USER=$(sudo -u "$CLAUDE_USER" python3 -c "
+import json, sys
+try:
+    d = json.load(open('$ACCESS_FILE'))
+    if 'roles' not in d:
+        uid = d.get('allowFrom', [''])[0]
+        if uid:
+            d['roles'] = {uid: 'admin'}
+            json.dump(d, open('$ACCESS_FILE', 'w'), indent=2)
+            print(uid)
+except Exception as e:
+    pass
+" 2>/dev/null || echo "")
+  if [[ -n "$FIRST_USER" ]]; then
+    info "Set $FIRST_USER as default admin in access.json"
+  fi
+else
+  warn "python3 not found — skipping default admin setup. Add roles manually to $ACCESS_FILE"
+fi
+
 # ── Login banner (MOTD) ──────────────────────────────────────────────────────
 
 if [[ -f "$INSTALL_DIR/scripts/motd.sh" ]]; then
@@ -475,6 +497,21 @@ else
 
   PLUGIN_AUTO=true
   info "Plugin install commands sent."
+fi
+
+# Append caller_id instruction to CLAUDE.md (idempotent)
+CLAUDE_MD="$CLAUDE_CONFIG_DIR/CLAUDE.md"
+if ! sudo -u "$CLAUDE_USER" grep -q 'pocket-claude role enforcement' "$CLAUDE_MD" 2>/dev/null; then
+  sudo -u "$CLAUDE_USER" tee -a "$CLAUDE_MD" > /dev/null << 'CLAUDE_MD_EOF'
+
+## pocket-claude role enforcement
+When a Telegram message arrives via <channel source="telegram" chat_id="X">,
+always pass chat_id X as `caller_id` when calling any MCP tool.
+This is required for role checks and onboarding tracking.
+CLAUDE_MD_EOF
+  info "Appended caller_id instruction to $CLAUDE_MD"
+else
+  info "CLAUDE.md already has caller_id instruction — skipping"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
