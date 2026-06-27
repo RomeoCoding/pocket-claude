@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # pocket-claude installer
-# One-command setup: Ubuntu VM → fully running Claude Code on Telegram
+# One-command setup: Linux VM → fully running Claude Code on Telegram
 #
 # Usage (interactive terminal required):
-#   curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh -o install.sh
+#   curl -fsSL https://raw.githubusercontent.com/RomeoCoding/pocket-claude/master/install.sh -o install.sh
 #   bash install.sh
 #   — or —
-#   git clone https://github.com/romeocoding/pocket-claude && cd pocket-claude && bash install.sh
+#   git clone https://github.com/RomeoCoding/pocket-claude && cd pocket-claude && bash install.sh
 #
-# Requirements: Ubuntu 22.04+ (x86_64 or ARM64), run as non-root user with sudo access.
-# The installer creates a dedicated 'claude' user and runs the daemon under that account.
+# Supported: Ubuntu 20.04+, Debian 11+, Fedora 37+, RHEL/AlmaLinux/Rocky 8+, CentOS Stream 8+
+# Requires: non-root user with sudo access, x86_64 or ARM64, systemd
 
 set -euo pipefail
 
@@ -48,25 +48,46 @@ fi
 [[ "$(uname -s)" == "Linux" ]] || error "Linux only."
 [[ -f /etc/os-release ]] && source /etc/os-release || true
 
-# Require apt-get (Debian/Ubuntu family)
-if ! command -v apt-get &>/dev/null; then
-  error "This installer requires apt-get (Debian/Ubuntu). For other distros, see docs/other-distros.md."
+# ── Detect package manager ─────────────────────────────────────────────────────
+if command -v apt-get &>/dev/null; then
+  PKG_MGR="apt"
+elif command -v dnf &>/dev/null; then
+  PKG_MGR="dnf"
+elif command -v yum &>/dev/null; then
+  PKG_MGR="yum"
+else
+  error "No supported package manager found. Requires apt-get (Debian/Ubuntu) or dnf/yum (Fedora/RHEL)."
 fi
+
+pkg_install() { sudo "$PKG_MGR" install -y ${PKG_MGR_QUIET_FLAG:-} "$@"; }
 
 case "${ID:-}" in
   ubuntu)
     VER_MAJOR="${VERSION_ID%%.*}"
-    [[ "${VER_MAJOR:-0}" -ge 20 ]] || error "Ubuntu 20.04 or later required (got ${VERSION_ID:-unknown})."
+    [[ "${VER_MAJOR:-0}" -ge 20 ]] || error "Ubuntu 20.04+ required (got ${VERSION_ID:-unknown})."
+    PKG_MGR_QUIET_FLAG="-qq"
     ;;
   debian)
     VER_MAJOR="${VERSION_ID%%.*}"
-    [[ "${VER_MAJOR:-0}" -ge 11 ]] || error "Debian 11 (Bullseye) or later required (got ${VERSION_ID:-unknown})."
+    [[ "${VER_MAJOR:-0}" -ge 11 ]] || error "Debian 11+ required (got ${VERSION_ID:-unknown})."
+    PKG_MGR_QUIET_FLAG="-qq"
+    ;;
+  fedora)
+    [[ "${VERSION_ID:-0}" -ge 37 ]] || warn "Fedora < 37 is untested."
+    PKG_MGR_QUIET_FLAG="-q"
+    ;;
+  rhel|centos|almalinux|rocky|ol|centos-stream)
+    VER_MAJOR="${VERSION_ID%%.*}"
+    [[ "${VER_MAJOR:-0}" -ge 8 ]] || error "RHEL/CentOS/AlmaLinux/Rocky 8+ required (got ${VERSION_ID:-unknown})."
+    PKG_MGR_QUIET_FLAG="-q"
     ;;
   linuxmint|pop|elementary|zorin|kali)
-    warn "Debian-based distro detected ($ID). Should work but is untested — proceed with care."
+    warn "Debian-based distro ($ID) — untested but should work."
+    PKG_MGR_QUIET_FLAG="-qq"
     ;;
   *)
-    warn "Unrecognised distro '${ID:-unknown}'. Tested on Ubuntu 20.04+/Debian 11+. Continuing anyway."
+    warn "Unrecognised distro '${ID:-unknown}'. Proceeding anyway."
+    PKG_MGR_QUIET_FLAG=""
     ;;
 esac
 
@@ -74,26 +95,40 @@ if [[ $EUID -eq 0 ]]; then
   error "Do not run as root. Run as a regular user with sudo access."
 fi
 
-# Check sudo without password caching prompt (just verify it works)
 sudo -n true 2>/dev/null || { sudo true || error "sudo required. Add your user to sudoers."; }
 
-info "System: $(uname -m) / ${PRETTY_NAME:-Linux}"
+info "System: $(uname -m) / ${PRETTY_NAME:-Linux} [pkg: $PKG_MGR]"
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
 section "Installing dependencies"
 
-sudo apt-get update -qq
-sudo apt-get install -y -qq \
-  curl git tmux jq cron unzip \
-  ca-certificates gnupg2 \
-  ufw fail2ban
+if [[ "$PKG_MGR" == "apt" ]]; then
+  sudo apt-get update -qq
+  pkg_install curl git tmux jq cron unzip ca-certificates gnupg2 ufw fail2ban
+else
+  # For RHEL-family: enable EPEL (provides fail2ban), install cronie instead of cron
+  if [[ "$PKG_MGR" == "dnf" ]]; then
+    sudo dnf install -y -q epel-release 2>/dev/null || true
+    sudo dnf config-manager --set-enabled crb 2>/dev/null || true   # PowerTools/CRB on RHEL 9
+  elif [[ "$PKG_MGR" == "yum" ]]; then
+    sudo yum install -y -q epel-release 2>/dev/null || true
+  fi
+  pkg_install curl git tmux jq cronie unzip ca-certificates gnupg2 fail2ban
+  # Ensure cron daemon is running
+  sudo systemctl enable --now crond 2>/dev/null || true
+fi
 
 # Node.js (via NodeSource)
 if ! command -v node &>/dev/null || ! node -e "if(parseInt(process.version.slice(1))<$MIN_NODE_VERSION)process.exit(1)" 2>/dev/null; then
   info "Installing Node.js $MIN_NODE_VERSION..."
-  curl -fsSL https://deb.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash -
-  sudo apt-get install -y -qq nodejs
+  if [[ "$PKG_MGR" == "apt" ]]; then
+    curl -fsSL https://deb.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash -
+    sudo apt-get install -y -qq nodejs
+  else
+    curl -fsSL https://rpm.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash -
+    pkg_install nodejs
+  fi
 fi
 
 NODE_VER=$(node -e 'console.log(Number(process.version.slice(1).split(".")[0]))')

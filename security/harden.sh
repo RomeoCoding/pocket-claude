@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # pocket-claude security hardening
-# Run once after initial setup. Hardens SSH, installs UFW + fail2ban,
+# Run once after initial setup. Hardens SSH, configures firewall + fail2ban,
 # locks down to minimal attack surface.
+# Supports: Debian/Ubuntu (ufw) and RHEL/Fedora/CentOS (firewalld)
 # Must be run as root or with sudo.
 set -euo pipefail
 
@@ -10,17 +11,45 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-echo "==> Installing UFW and fail2ban..."
-apt-get update -qq
-apt-get install -y -qq ufw fail2ban
+# Detect package manager
+if command -v apt-get &>/dev/null; then
+  PKG_MGR="apt"
+elif command -v dnf &>/dev/null; then
+  PKG_MGR="dnf"
+elif command -v yum &>/dev/null; then
+  PKG_MGR="yum"
+else
+  PKG_MGR="unknown"
+fi
 
-echo "==> Configuring UFW..."
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh comment 'SSH access'
-# No inbound HTTP/HTTPS — Telegram uses outbound long polling only
-ufw --force enable
+echo "==> Installing firewall and fail2ban..."
+if [[ "$PKG_MGR" == "apt" ]]; then
+  apt-get update -qq
+  apt-get install -y -qq ufw fail2ban
+else
+  # EPEL provides fail2ban on RHEL-family; firewalld is usually pre-installed
+  "$PKG_MGR" install -y -q epel-release 2>/dev/null || true
+  "$PKG_MGR" install -y -q fail2ban firewalld
+fi
+
+echo "==> Configuring firewall..."
+if command -v ufw &>/dev/null; then
+  ufw --force reset
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow ssh comment 'SSH access'
+  ufw --force enable
+  echo "    UFW: active (SSH only inbound)"
+elif command -v firewall-cmd &>/dev/null; then
+  systemctl enable --now firewalld
+  firewall-cmd --permanent --set-default-zone=drop
+  firewall-cmd --permanent --add-service=ssh
+  firewall-cmd --permanent --remove-service=dhcpv6-client 2>/dev/null || true
+  firewall-cmd --reload
+  echo "    firewalld: active (SSH only, default zone=drop)"
+else
+  echo "    WARN: no firewall tool found — skipping firewall config"
+fi
 
 echo "==> Configuring fail2ban..."
 cat > /etc/fail2ban/jail.local << 'EOF'
@@ -65,7 +94,9 @@ grep -q "^ClientAliveInterval" "$SSHD_CONFIG" || echo "ClientAliveInterval 300" 
 grep -q "^ClientAliveCountMax" "$SSHD_CONFIG" || echo "ClientAliveCountMax 2" >> "$SSHD_CONFIG"
 
 sshd -t  # Validate config before reloading
-systemctl reload sshd
+
+# sshd reload command differs slightly across distros
+systemctl reload sshd 2>/dev/null || systemctl reload sshd.service 2>/dev/null || true
 
 echo "==> Setting system-wide umask to 027..."
 grep -q "^umask 027" /etc/profile || echo "umask 027" >> /etc/profile
@@ -77,9 +108,13 @@ sysctl -p > /dev/null
 
 echo ""
 echo "Hardening complete."
-echo "  UFW:      active, SSH only inbound"
+if command -v ufw &>/dev/null; then
+  echo "  Firewall: UFW — SSH only inbound"
+else
+  echo "  Firewall: firewalld — SSH only inbound (zone=drop)"
+fi
 echo "  fail2ban: SSH (3 retries → 24h ban)"
 echo "  SSH:      key-only, root login disabled, password auth off"
 echo ""
 echo "IMPORTANT: Verify you can still SSH in from a new terminal BEFORE"
-echo "closing this session. Test: ssh claude@<your-ip>"
+echo "closing this session."

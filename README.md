@@ -65,12 +65,24 @@ Session switching works by writing a session ID to disk, sending Ctrl-C to Claud
 
 | Requirement | Notes |
 |-------------|-------|
-| A Linux VM | Ubuntu 20.04+ or Debian 11+ — any cloud or local hypervisor |
+| A Linux VM | See compatibility table below |
 | claude.ai Pro or Max | No API key — uses OAuth login |
 | Telegram account | Create a bot via [@BotFather](https://t.me/BotFather) |
 | Telegram user ID | Get yours from [@userinfobot](https://t.me/userinfobot) |
 
-**Works on any host:** Oracle Cloud Free Tier, DigitalOcean, Hetzner, AWS EC2, GCP, Azure, Linode, VirtualBox, VMware, Hyper-V, Proxmox, bare metal — anything running Ubuntu 20.04+/Debian 11+ with systemd and internet access.
+**OS compatibility:**
+
+| Distro | Min version | Status |
+|--------|-------------|--------|
+| Ubuntu | 20.04 | ✅ Fully supported |
+| Debian | 11 (Bullseye) | ✅ Fully supported |
+| Fedora | 37 | ✅ Fully supported |
+| RHEL / AlmaLinux / Rocky | 8 | ✅ Fully supported |
+| CentOS Stream | 8 | ✅ Fully supported |
+| Pop!\_OS / Mint / Kali | — | ⚠️ Untested, likely works |
+| Arch / Gentoo / NixOS | — | ❌ Not supported |
+
+**Works on any host:** Oracle Cloud, AWS, GCP, Azure, DigitalOcean, Hetzner, VirtualBox, VMware, Hyper-V, Proxmox, bare metal — the hypervisor doesn't matter, only the guest OS.
 
 ---
 
