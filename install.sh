@@ -39,7 +39,7 @@ if [[ ! -t 0 ]]; then
   echo -e "${RED}ERROR:${NC} This installer requires an interactive terminal."
   echo ""
   echo "Download and run it directly:"
-  echo "  curl -fsSL https://raw.githubusercontent.com/romeocoding/pocket-claude/main/install.sh -o install.sh"
+  echo "  curl -fsSL https://raw.githubusercontent.com/RomeoCoding/pocket-claude/master/install.sh -o install.sh"
   echo "  bash install.sh"
   echo ""
   exit 1
@@ -47,7 +47,28 @@ fi
 
 [[ "$(uname -s)" == "Linux" ]] || error "Linux only."
 [[ -f /etc/os-release ]] && source /etc/os-release || true
-[[ "${ID:-}" == "ubuntu" ]] || warn "Tested on Ubuntu. Other distros may need manual adjustment."
+
+# Require apt-get (Debian/Ubuntu family)
+if ! command -v apt-get &>/dev/null; then
+  error "This installer requires apt-get (Debian/Ubuntu). For other distros, see docs/other-distros.md."
+fi
+
+case "${ID:-}" in
+  ubuntu)
+    VER_MAJOR="${VERSION_ID%%.*}"
+    [[ "${VER_MAJOR:-0}" -ge 20 ]] || error "Ubuntu 20.04 or later required (got ${VERSION_ID:-unknown})."
+    ;;
+  debian)
+    VER_MAJOR="${VERSION_ID%%.*}"
+    [[ "${VER_MAJOR:-0}" -ge 11 ]] || error "Debian 11 (Bullseye) or later required (got ${VERSION_ID:-unknown})."
+    ;;
+  linuxmint|pop|elementary|zorin|kali)
+    warn "Debian-based distro detected ($ID). Should work but is untested — proceed with care."
+    ;;
+  *)
+    warn "Unrecognised distro '${ID:-unknown}'. Tested on Ubuntu 20.04+/Debian 11+. Continuing anyway."
+    ;;
+esac
 
 if [[ $EUID -eq 0 ]]; then
   error "Do not run as root. Run as a regular user with sudo access."

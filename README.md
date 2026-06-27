@@ -65,11 +65,12 @@ Session switching works by writing a session ID to disk, sending Ctrl-C to Claud
 
 | Requirement | Notes |
 |-------------|-------|
-| Oracle Cloud account | Always Free tier — no ongoing charge after signup |
-| Ubuntu 22.04+ VM | x86_64 or ARM64; see [Oracle setup guide](docs/oracle-setup.md) |
+| A Linux VM | Ubuntu 20.04+ or Debian 11+ — any cloud or local hypervisor |
 | claude.ai Pro or Max | No API key — uses OAuth login |
 | Telegram account | Create a bot via [@BotFather](https://t.me/BotFather) |
 | Telegram user ID | Get yours from [@userinfobot](https://t.me/userinfobot) |
+
+**Works on any host:** Oracle Cloud Free Tier, DigitalOcean, Hetzner, AWS EC2, GCP, Azure, Linode, VirtualBox, VMware, Hyper-V, Proxmox, bare metal — anything running Ubuntu 20.04+/Debian 11+ with systemd and internet access.
 
 ---
 

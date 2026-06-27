@@ -1,6 +1,8 @@
 # Oracle Cloud Free Tier Setup
 
-pocket-claude runs well on Oracle's Always Free ARM VM (4 OCPU, 24 GB RAM, indefinitely free).
+> pocket-claude works on any Ubuntu 20.04+/Debian 11+ VM — not just Oracle. See below for other providers.
+
+Oracle's Always Free ARM VM (4 OCPU, 24 GB RAM, indefinitely free) is the best zero-cost option if you can get one in your region.
 
 ---
 
