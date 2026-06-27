@@ -14,7 +14,7 @@
 1. Open Telegram → search for **@BotFather**
 2. Send `/newbot`
 3. Choose a name (e.g. "My Claude") and a username ending in `bot` (e.g. `myclaudeXYZ_bot`)
-4. BotFather replies with a token like `8659888624:AAHfyCxZx2C5HxAt5z6EPTVkrxSP_LAcloY`
+4. BotFather replies with a token like `1234567890:AAHxyz...` (keep this secret)
 5. **Keep this token secret.** It grants full control over your bot.
 
 ---
