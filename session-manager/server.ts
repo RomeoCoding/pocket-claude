@@ -30,6 +30,7 @@ import {
   deleteSession,
   deleteOldSessions,
 } from './sessions.ts'
+import { getUserRole, requireAdmin } from './roles.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
@@ -186,6 +187,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  const callerId = typeof args.caller_id === 'string' ? args.caller_id : undefined
 
   try {
     switch (req.params.name) {
@@ -262,6 +264,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
 
       case 'new_session': {
+        const roleCheck = requireAdmin(callerId)
+        if (!roleCheck.ok) return { content: [{ type: 'text', text: roleCheck.error }], isError: true }
         if (args.confirmed !== true) {
           return { content: [{ type: 'text', text: 'This will discard your current context window (session history on disk stays safe).\nCall new_session again with confirmed: true to proceed.' }] }
         }
@@ -270,6 +274,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
 
       case 'restart_session': {
+        const roleCheck = requireAdmin(callerId)
+        if (!roleCheck.ok) return { content: [{ type: 'text', text: roleCheck.error }], isError: true }
         const state = readState()
         const currentId = typeof state.currentSessionId === 'string' ? state.currentSessionId : ''
         if (currentId && isValidSessionId(currentId)) {
@@ -282,6 +288,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
 
       case 'delete_sessions': {
+        const roleCheck = requireAdmin(callerId)
+        if (!roleCheck.ok) return { content: [{ type: 'text', text: roleCheck.error }], isError: true }
         if (args.confirmed !== true) {
           const preview = typeof args.older_than_days === 'number'
             ? `Delete all sessions older than ${args.older_than_days} days?`
@@ -364,6 +372,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
 
       case 'update_pocket_claude': {
+        const roleCheck = requireAdmin(callerId)
+        if (!roleCheck.ok) return { content: [{ type: 'text', text: roleCheck.error }], isError: true }
         if (args.confirmed !== true) {
           return { content: [{ type: 'text', text: 'This will pull the latest code from GitHub and restart pocket-claude.\nCall again with confirmed: true to proceed.' }] }
         }
