@@ -33,12 +33,33 @@ import {
 import { getUserRole, requireAdmin, setUserRole } from './roles.ts'
 import { sendMessage, broadcast } from './telegram.ts'
 import { queueTask, listQueue, completeTask, formatQueue } from './queue.ts'
+import { checkAndRecord, markWelcomed } from './seen_users.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
 const TMUX_TMPDIR = join(homedir(), '.pocket-claude', 'tmux')
 const INSTALL_DIR = '/opt/pocket-claude'
 const tmuxEnv = { ...process.env, TMUX_TMPDIR }
+
+const WELCOME_MESSAGE = `👋 Welcome to pocket-claude
+
+This is a full Claude Code instance running 24/7 on a VM — accessible from Telegram, no laptop needed.
+
+What makes it different from API bots:
+• Runs real code, edits files, uses all MCP tools — no sandboxing
+• No API key needed — powered by your Claude Code subscription
+• Works while your laptop is off
+• Shared with your team — one instance, everyone connected
+
+Things to try:
+  "What are you working on?"
+  "List my sessions"
+  "Queue a task: <description>"
+
+Drop a file here and I'll read it.
+Send a voice note and I'll transcribe and act on it (if voice is enabled).
+
+─────────────────────────────────`
 
 process.on('unhandledRejection', err => {
   process.stderr.write(`session-manager: unhandled rejection: ${err}\n`)
@@ -91,6 +112,21 @@ const mcp = new Server(
   { name: 'pocket-claude-session-manager', version: '1.2.0' },
   { capabilities: { tools: {} } },
 )
+
+function prependWelcome(
+  result: { content: Array<{ type: string; text: string }>; isError?: boolean },
+  prefix: string,
+): typeof result {
+  if (!prefix) return result
+  return {
+    ...result,
+    content: result.content.map((c, i) =>
+      i === 0 && c.type === 'text'
+        ? { ...c, text: prefix + c.text }
+        : c
+    ),
+  }
+}
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -236,12 +272,12 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }))
 
-mcp.setRequestHandler(CallToolRequestSchema, async req => {
-  const args = (req.params.arguments ?? {}) as Record<string, unknown>
-  const callerId = typeof args.caller_id === 'string' ? args.caller_id : undefined
-
-  try {
-    switch (req.params.name) {
+async function handleTool(
+  name: string,
+  args: Record<string, unknown>,
+  callerId: string | undefined,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  switch (name) {
 
       case 'list_sessions': {
         const limit = typeof args.limit === 'number' ? Math.min(args.limit, 50) : 50
@@ -535,9 +571,27 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: `Completed: "${task.description}"${note ? ` — ${note}` : ''}` }] }
       }
 
-      default:
-        return { content: [{ type: 'text', text: `Unknown tool: ${req.params.name}` }], isError: true }
+    default:
+      return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+  }
+}
+
+mcp.setRequestHandler(CallToolRequestSchema, async req => {
+  const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  const callerId = typeof args.caller_id === 'string' ? args.caller_id : undefined
+
+  let welcomePrefix = ''
+  if (callerId) {
+    const { needsWelcome } = checkAndRecord(callerId)
+    if (needsWelcome) {
+      markWelcomed(callerId)
+      welcomePrefix = WELCOME_MESSAGE + '\n\n'
     }
+  }
+
+  try {
+    const result = await handleTool(req.params.name, args, callerId)
+    return prependWelcome(result, welcomePrefix)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true }
