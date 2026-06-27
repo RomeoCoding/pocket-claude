@@ -31,6 +31,7 @@ import {
   deleteOldSessions,
 } from './sessions.ts'
 import { getUserRole, requireAdmin, setUserRole } from './roles.ts'
+import { sendMessage, broadcast } from './telegram.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
@@ -197,6 +198,14 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: { type: 'object', properties: {
         caller_id: { type: 'string', description: 'Your Telegram chat_id (optional, for onboarding tracking)' },
       }},
+    },
+    {
+      name: 'notify_user',
+      description: 'Send a Telegram message proactively — use this when a long task finishes so the user gets pinged without polling. Omit chat_id to broadcast to all users.',
+      inputSchema: { type: 'object', properties: {
+        message: { type: 'string', description: 'Message to send' },
+        chat_id: { type: 'string', description: 'Specific Telegram chat_id to notify (omit to broadcast to all)' },
+      }, required: ['message'] },
     },
   ],
 }))
@@ -436,6 +445,24 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           preview,
         ]
         return { content: [{ type: 'text', text: lines.join('\n') }] }
+      }
+
+      case 'notify_user': {
+        const message = typeof args.message === 'string' ? args.message.trim() : ''
+        if (!message) return { content: [{ type: 'text', text: 'Provide a message.' }], isError: true }
+        const targetChatId = typeof args.chat_id === 'string' ? args.chat_id.trim() : null
+        try {
+          if (targetChatId) {
+            await sendMessage(targetChatId, message)
+            return { content: [{ type: 'text', text: `Notified ${targetChatId}.` }] }
+          } else {
+            await broadcast(message)
+            return { content: [{ type: 'text', text: 'Broadcast sent to all users.' }] }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { content: [{ type: 'text', text: `Notification failed: ${msg}` }], isError: true }
+        }
       }
 
       default:
