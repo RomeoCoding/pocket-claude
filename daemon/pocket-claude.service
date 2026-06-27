@@ -1,0 +1,42 @@
+[Unit]
+Description=pocket-claude — Claude Code always-on daemon
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=claude
+Group=claude
+
+# Start Claude in a detached tmux session
+ExecStart=/home/claude/.pocket-claude/start.sh
+ExecStop=/usr/bin/tmux kill-session -t pocket-claude
+PIDFile=/home/claude/.pocket-claude/daemon.pid
+
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/claude
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pocket-claude
+
+[Install]
+WantedBy=multi-user.target

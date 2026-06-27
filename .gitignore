@@ -1,0 +1,29 @@
+# Credentials — never commit these
+.env
+*.env
+.env.*
+channels/telegram/.env
+channels/
+
+# Runtime state
+*.log
+*.pid
+*.sock
+
+# Node
+node_modules/
+dist/
+*.js.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+coverage/
