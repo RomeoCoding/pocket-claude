@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 export type Role = 'admin' | 'member'
@@ -12,6 +12,7 @@ function readAccess(): Record<string, unknown> {
 }
 
 function writeAccess(data: Record<string, unknown>): void {
+  mkdirSync(dirname(ACCESS_FILE), { recursive: true })
   writeFileSync(ACCESS_FILE, JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 
@@ -22,7 +23,7 @@ export function getUserRole(userId: string): Role {
   return roles[userId] === 'admin' ? 'admin' : 'member'
 }
 
-export async function setUserRole(userId: string, role: Role): Promise<void> {
+export function setUserRole(userId: string, role: Role): void {
   const access = readAccess()
   const roles = (access.roles ?? {}) as Record<string, string>
   roles[userId] = role
