@@ -265,6 +265,11 @@ else
   info "Bot locked to Telegram user ID $TELEGRAM_USER_ID"
 fi
 
+# ── Login banner (MOTD) ──────────────────────────────────────────────────────
+
+sudo install -m 755 "$INSTALL_DIR/scripts/motd.sh" /etc/update-motd.d/01-pocket-claude
+info "MOTD: installed to /etc/update-motd.d/01-pocket-claude"
+
 # ── systemd service ───────────────────────────────────────────────────────────
 
 section "Installing systemd service"
