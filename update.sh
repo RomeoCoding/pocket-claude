@@ -13,7 +13,6 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}==>${NC} $*"; }
 error() { echo -e "${RED}ERROR:${NC} $*" >&2; exit 1; }
 
-[[ $EUID -eq 0 ]] && error "Do not run as root."
 [[ -d "$INSTALL_DIR" ]] || error "pocket-claude not installed at $INSTALL_DIR. Run install.sh first."
 
 info "Pulling latest code..."

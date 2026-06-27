@@ -347,7 +347,7 @@ sudo systemctl enable pocket-claude
 
 # Allow the claude user to restart the service from the watchdog cron job
 SUDOERS_FILE="/etc/sudoers.d/pocket-claude"
-echo "$CLAUDE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart pocket-claude, /usr/bin/systemctl start pocket-claude" \
+echo "$CLAUDE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart pocket-claude, /usr/bin/systemctl start pocket-claude, /bin/bash $INSTALL_DIR/update.sh" \
   | sudo tee "$SUDOERS_FILE" > /dev/null
 sudo chmod 440 "$SUDOERS_FILE"
 sudo visudo -c -f "$SUDOERS_FILE" > /dev/null 2>&1 || {

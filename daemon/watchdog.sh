@@ -17,15 +17,18 @@ if [[ -f "$LOG_FILE" ]] && [[ $(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0) -gt
   mv "$LOG_FILE" "${LOG_FILE}.1"
 fi
 
-# Send a Telegram message to all allowlisted users
+# Send a Telegram message to all allowlisted users AND group chats
 notify_telegram() {
   local msg="$1"
   local token_file="$HOME/.claude/channels/telegram/.env"
   local access_file="$HOME/.claude/channels/telegram/access.json"
   [[ -f "$token_file" ]] && [[ -f "$access_file" ]] || return 0
   local token
-  token=$(grep TELEGRAM_BOT_TOKEN "$token_file" 2>/dev/null | cut -d= -f2 || true)
+  # cut -d= -f2- keeps everything after the first = (tokens can contain = in base64)
+  token=$(grep TELEGRAM_BOT_TOKEN "$token_file" 2>/dev/null | cut -d= -f2- || true)
   [[ -z "$token" ]] && return 0
+
+  # Notify DM-allowlisted users
   local user_ids
   user_ids=$(jq -r '.allowFrom[]?' "$access_file" 2>/dev/null || true)
   while IFS= read -r chat_id; do
@@ -35,11 +38,18 @@ notify_telegram() {
       --data-urlencode "text=${msg}" \
       -o /dev/null --max-time 10 || true
   done <<< "$user_ids"
-}
 
-# Oracle Always Free keep-alive: generates real outbound network traffic.
-# A filesystem touch is NOT sufficient — Oracle monitors CPU/network metrics.
-curl -sf --max-time 10 https://1.1.1.1 -o /dev/null || true
+  # Also notify configured group chats
+  local group_ids
+  group_ids=$(jq -r '.groups | keys[]?' "$access_file" 2>/dev/null || true)
+  while IFS= read -r chat_id; do
+    [[ -z "$chat_id" ]] && continue
+    curl -sf "https://api.telegram.org/bot${token}/sendMessage" \
+      --data-urlencode "chat_id=${chat_id}" \
+      --data-urlencode "text=${msg}" \
+      -o /dev/null --max-time 10 || true
+  done <<< "$group_ids"
+}
 
 # Check tmux session exists
 if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
@@ -67,5 +77,9 @@ if [[ "${PROC_NAME:-}" != "claude" ]]; then
   sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
+
+# Oracle Always Free keep-alive: runs AFTER health check so a crash is detected
+# within 60s even on network blips. Generates outbound traffic Oracle monitors.
+curl -sf --max-time 10 https://1.1.1.1 -o /dev/null &
 
 log "OK (claude pid=$PANE_PID)"
