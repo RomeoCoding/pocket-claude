@@ -32,6 +32,7 @@ import {
 } from './sessions.ts'
 import { getUserRole, requireAdmin, setUserRole } from './roles.ts'
 import { sendMessage, broadcast } from './telegram.ts'
+import { queueTask, listQueue, completeTask, formatQueue } from './queue.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
@@ -206,6 +207,31 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         message: { type: 'string', description: 'Message to send' },
         chat_id: { type: 'string', description: 'Specific Telegram chat_id to notify (omit to broadcast to all)' },
       }, required: ['message'] },
+    },
+    {
+      name: 'queue_task',
+      description: 'Add a task to the persistent queue. Claude will work through queued tasks and notify you when each is done.',
+      inputSchema: { type: 'object', properties: {
+        description: { type: 'string', description: 'What needs to be done' },
+        priority: { type: 'string', enum: ['high', 'normal'], description: 'Priority (default: normal)' },
+        caller_id: { type: 'string', description: 'Your Telegram chat_id (used to notify you on completion)' },
+      }, required: ['description'] },
+    },
+    {
+      name: 'list_queue',
+      description: 'Show all tasks in the queue — pending, in progress, and recently completed.',
+      inputSchema: { type: 'object', properties: {
+        caller_id: { type: 'string', description: 'Your Telegram chat_id (optional)' },
+      }},
+    },
+    {
+      name: 'complete_task',
+      description: 'Mark a queued task as done. Automatically notifies the user who queued it.',
+      inputSchema: { type: 'object', properties: {
+        task_id: { type: 'string', description: 'Task ID from list_queue (full UUID or first 8 chars)' },
+        note: { type: 'string', description: 'Optional completion note (e.g. "3 files changed")' },
+        caller_id: { type: 'string', description: 'Your Telegram chat_id (optional)' },
+      }, required: ['task_id'] },
     },
   ],
 }))
@@ -433,6 +459,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const preview = current
           ? await getSessionPreview(currentId, 2, current.filePath)
           : '(no active session)'
+        const queue = listQueue().filter(t => t.status !== 'done')
 
         const lines = [
           `📋 Handoff Summary — ${new Date().toLocaleString()}`,
@@ -443,6 +470,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           '',
           '--- Recent context ---',
           preview,
+          '',
+          `--- Task queue (${queue.length} pending) ---`,
+          queue.length === 0
+            ? '(no pending tasks)'
+            : queue.map(t => `${t.priority === 'high' ? '🔴' : '⏳'} ${t.description} (queued by ${t.queued_by})`).join('\n'),
         ]
         return { content: [{ type: 'text', text: lines.join('\n') }] }
       }
@@ -463,6 +495,44 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const msg = err instanceof Error ? err.message : String(err)
           return { content: [{ type: 'text', text: `Notification failed: ${msg}` }], isError: true }
         }
+      }
+
+      case 'queue_task': {
+        const description = typeof args.description === 'string' ? args.description.trim() : ''
+        if (!description) return { content: [{ type: 'text', text: 'Provide a task description.' }], isError: true }
+        const priority = args.priority === 'high' ? 'high' as const : 'normal' as const
+        const task = queueTask(description, priority, callerId ?? 'unknown')
+        return { content: [{ type: 'text', text: `Task queued: #${task.id.slice(0, 8)} — "${task.description}" [${priority}]` }] }
+      }
+
+      case 'list_queue': {
+        const tasks = listQueue()
+        const pending = tasks.filter(t => t.status !== 'done')
+        const recentDone = tasks.filter(t => t.status === 'done').slice(-5)
+        const sections: string[] = []
+        if (pending.length > 0) sections.push(`Pending/Active (${pending.length}):\n${formatQueue(pending)}`)
+        if (recentDone.length > 0) sections.push(`Recently completed:\n${formatQueue(recentDone)}`)
+        const text = sections.length > 0 ? sections.join('\n\n') : '(queue is empty)'
+        return { content: [{ type: 'text', text }] }
+      }
+
+      case 'complete_task': {
+        const taskId = typeof args.task_id === 'string' ? args.task_id.trim() : ''
+        if (!taskId) return { content: [{ type: 'text', text: 'Provide task_id.' }], isError: true }
+        const note = typeof args.note === 'string' ? args.note.trim() : undefined
+        // Support both full UUID and 8-char prefix
+        const allTasks = listQueue()
+        const matchedId = allTasks.find(t => t.id === taskId || t.id.startsWith(taskId))?.id
+        if (!matchedId) return { content: [{ type: 'text', text: `Task not found: ${taskId}` }], isError: true }
+        const task = completeTask(matchedId, note)
+        if (!task) return { content: [{ type: 'text', text: `Task not found: ${taskId}` }], isError: true }
+        // Notify the user who queued it
+        const notifyTarget = task.queued_by !== 'unknown' ? task.queued_by : null
+        const notifyText = `✅ Task complete: "${task.description}"${note ? `\n${note}` : ''}`
+        if (notifyTarget) {
+          sendMessage(notifyTarget, notifyText).catch(() => { /* non-fatal */ })
+        }
+        return { content: [{ type: 'text', text: `Completed: "${task.description}"${note ? ` — ${note}` : ''}` }] }
       }
 
       default:
