@@ -26,7 +26,7 @@ if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
   exit 0
 fi
 
-# Check claude process is alive in the pane
+# Get the PID of the process running directly in the tmux pane (should be claude itself)
 PANE_PID=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_pid}" 2>/dev/null | head -1)
 if [[ -z "$PANE_PID" ]]; then
   log "WARNING: No panes in session. Restarting."
@@ -34,8 +34,11 @@ if [[ -z "$PANE_PID" ]]; then
   exit 0
 fi
 
-if ! pgrep -P "$PANE_PID" claude > /dev/null 2>&1; then
-  log "WARNING: Claude process not found under pane pid $PANE_PID. Restarting."
+# When tmux is started with `-- claude ...`, the pane_pid IS the claude process.
+# Check that process is alive and is named 'claude'.
+PROC_NAME=$(ps -p "$PANE_PID" -o comm= 2>/dev/null || true)
+if [[ "${PROC_NAME:-}" != "claude" ]]; then
+  log "WARNING: Pane process is '${PROC_NAME:-dead}' (pid $PANE_PID), expected 'claude'. Restarting."
   sudo systemctl restart pocket-claude 2>/dev/null || true
   exit 0
 fi
@@ -44,4 +47,4 @@ fi
 # Oracle reclaims VMs it considers idle. A file write every minute prevents this.
 touch "$HOME/.pocket-claude/.keepalive"
 
-log "OK"
+log "OK (claude pid=$PANE_PID)"
