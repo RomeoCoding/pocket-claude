@@ -30,7 +30,7 @@ import {
   deleteSession,
   deleteOldSessions,
 } from './sessions.ts'
-import { getUserRole, requireAdmin } from './roles.ts'
+import { getUserRole, requireAdmin, setUserRole } from './roles.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
@@ -180,6 +180,22 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: 'Pull latest pocket-claude code from GitHub and restart the service.',
       inputSchema: { type: 'object', properties: {
         confirmed: { type: 'boolean', description: 'Must be true to execute the update' },
+      }},
+    },
+    {
+      name: 'set_user_role',
+      description: 'Grant or revoke admin access for a Telegram user. Admin only. Pass caller_id (your own chat_id) and target_user_id (the user to change).',
+      inputSchema: { type: 'object', properties: {
+        target_user_id: { type: 'string', description: 'Telegram user ID to update' },
+        role: { type: 'string', enum: ['admin', 'member'], description: 'Role to assign' },
+        caller_id: { type: 'string', description: 'Your own Telegram chat_id (required for auth)' },
+      }, required: ['target_user_id', 'role'] },
+    },
+    {
+      name: 'handoff_summary',
+      description: 'Generate a structured summary of current work, open tasks, and recent context — for handing off to a teammate.',
+      inputSchema: { type: 'object', properties: {
+        caller_id: { type: 'string', description: 'Your Telegram chat_id (optional, for onboarding tracking)' },
       }},
     },
   ],
@@ -388,6 +404,38 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const detail = stderr.trim() ? `\n${stderr.trim()}` : ''
           return { content: [{ type: 'text', text: `Update failed: ${msg}${detail}\n\nSSH in and run: sudo bash ${INSTALL_DIR}/update.sh` }], isError: true }
         }
+      }
+
+      case 'set_user_role': {
+        const roleCheck = requireAdmin(callerId)
+        if (!roleCheck.ok) return { content: [{ type: 'text', text: roleCheck.error }], isError: true }
+        const targetId = typeof args.target_user_id === 'string' ? args.target_user_id.trim() : ''
+        const role = args.role === 'admin' ? 'admin' as const : 'member' as const
+        if (!targetId) return { content: [{ type: 'text', text: 'Provide target_user_id.' }], isError: true }
+        setUserRole(targetId, role)
+        return { content: [{ type: 'text', text: `User ${targetId} is now ${role}.` }] }
+      }
+
+      case 'handoff_summary': {
+        const state = readState()
+        const currentId = typeof state.currentSessionId === 'string' ? state.currentSessionId : ''
+        const sessions = await listSessions(50)
+        const current = sessions.find(s => s.id === currentId)
+        const preview = current
+          ? await getSessionPreview(currentId, 2, current.filePath)
+          : '(no active session)'
+
+        const lines = [
+          `📋 Handoff Summary — ${new Date().toLocaleString()}`,
+          '',
+          `Session: "${current?.title ?? 'unknown'}"`,
+          `Project: ${current?.projectPath ?? 'unknown'}`,
+          `Last active: ${current ? formatAge(current.updatedAt) : 'unknown'}`,
+          '',
+          '--- Recent context ---',
+          preview,
+        ]
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
       }
 
       default:
