@@ -51,30 +51,40 @@ notify_telegram() {
   done <<< "$group_ids"
 }
 
+# Attempt a systemd restart, logging failure explicitly rather than swallowing it
+restart_service() {
+  local reason="$1"
+  log "WARNING: $reason. Attempting systemd restart."
+  notify_telegram "⚠️ pocket-claude: ${reason} — restarting"
+  if sudo systemctl restart pocket-claude 2>/tmp/watchdog-restart-err; then
+    log "INFO: pocket-claude restarted successfully."
+  else
+    local err
+    err=$(cat /tmp/watchdog-restart-err 2>/dev/null || echo "(no stderr captured)")
+    log "ERROR: systemd restart failed: ${err}"
+    log "ERROR: Manual intervention required. SSH in and run: sudo systemctl restart pocket-claude"
+    notify_telegram "❌ pocket-claude: restart FAILED — SSH in to fix. Error: ${err}"
+  fi
+  rm -f /tmp/watchdog-restart-err
+}
+
 # Check tmux session exists
 if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-  log "WARNING: tmux session '$TMUX_SESSION' not found. Triggering systemd restart."
-  notify_telegram "⚠️ pocket-claude: tmux session not found — restarting"
-  sudo systemctl restart pocket-claude 2>/dev/null || \
-    log "ERROR: Could not restart pocket-claude. Check sudoers: /etc/sudoers.d/pocket-claude"
+  restart_service "tmux session '$TMUX_SESSION' not found"
   exit 0
 fi
 
 # Get the PID of the process running directly in the tmux pane
 PANE_PID=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_pid}" 2>/dev/null | head -1)
 if [[ -z "$PANE_PID" ]]; then
-  log "WARNING: No panes in session. Restarting."
-  notify_telegram "⚠️ pocket-claude: no tmux panes found — restarting"
-  sudo systemctl restart pocket-claude 2>/dev/null || true
+  restart_service "no tmux panes found in session"
   exit 0
 fi
 
 # pane_pid IS the claude process when started with `tmux new-session -- claude`
 PROC_NAME=$(ps -p "$PANE_PID" -o comm= 2>/dev/null || true)
 if [[ "${PROC_NAME:-}" != "claude" ]]; then
-  log "WARNING: Pane process is '${PROC_NAME:-dead}' (pid $PANE_PID), expected 'claude'. Restarting."
-  notify_telegram "⚠️ pocket-claude crashed (pid $PANE_PID was '${PROC_NAME:-gone}') — restarting"
-  sudo systemctl restart pocket-claude 2>/dev/null || true
+  restart_service "pane process is '${PROC_NAME:-dead}' (pid $PANE_PID), expected 'claude'"
   exit 0
 fi
 

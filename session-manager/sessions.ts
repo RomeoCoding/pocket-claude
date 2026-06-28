@@ -12,8 +12,8 @@ export type Session = {
   filePath: string
 }
 
-const PROJECTS_DIR = join(homedir(), '.claude', 'projects')
-const PINNED_FILE = join(homedir(), '.pocket-claude', 'pinned.json')
+const PROJECTS_DIR = process.env._PC_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects')
+const PINNED_FILE = process.env._PC_PINNED_FILE ?? join(homedir(), '.pocket-claude', 'pinned.json')
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export function isValidSessionId(id: string): boolean {

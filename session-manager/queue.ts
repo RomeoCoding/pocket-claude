@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, existsSync, appendFileSync, renameSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
@@ -31,7 +31,11 @@ function readAllTasks(): Task[] {
 }
 
 function writeAllTasks(tasks: Task[]): void {
-  writeFileSync(QUEUE_FILE, tasks.map(t => JSON.stringify(t)).join('\n') + '\n', { mode: 0o600 })
+  mkdirSync(dirname(QUEUE_FILE), { recursive: true })
+  // Write via tmp+rename so a crash mid-write never leaves a partially-written file
+  const tmp = `${QUEUE_FILE}.tmp.${process.pid}`
+  writeFileSync(tmp, tasks.map(t => JSON.stringify(t)).join('\n') + '\n', { mode: 0o600 })
+  renameSync(tmp, QUEUE_FILE)
 }
 
 export function queueTask(
@@ -49,6 +53,7 @@ export function queueTask(
     completed_at: null,
     note: null,
   }
+  // appendFileSync is atomic for small payloads on Linux — safe to use for enqueue
   appendFileSync(QUEUE_FILE, JSON.stringify(task) + '\n', { mode: 0o600 })
   return task
 }
