@@ -269,6 +269,14 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         caller_id: { type: 'string', description: 'Your Telegram chat_id (optional)' },
       }, required: ['task_id'] },
     },
+    {
+      name: 'transcribe_voice',
+      description: 'Transcribe a voice message (.ogg file) to text using whisper. Call this when the user sends a voice note — pass the downloaded file path.',
+      inputSchema: { type: 'object', properties: {
+        file_path: { type: 'string', description: 'Absolute path to the .ogg voice file on disk' },
+        caller_id: { type: 'string', description: 'Your Telegram chat_id (optional)' },
+      }, required: ['file_path'] },
+    },
   ],
 }))
 
@@ -569,6 +577,28 @@ async function handleTool(
           sendMessage(notifyTarget, notifyText).catch(() => { /* non-fatal */ })
         }
         return { content: [{ type: 'text', text: `Completed: "${task.description}"${note ? ` — ${note}` : ''}` }] }
+      }
+
+      case 'transcribe_voice': {
+        const filePath = typeof args.file_path === 'string' ? args.file_path.trim() : ''
+        if (!filePath) return { content: [{ type: 'text', text: 'Provide file_path.' }], isError: true }
+
+        const whichResult = spawnSync('which', ['whisper'], { encoding: 'utf8' })
+        if (whichResult.status !== 0) {
+          return { content: [{ type: 'text', text: 'Voice transcription is not enabled on this instance.\nThe owner can run: bash /opt/pocket-claude/install.sh --with-voice' }], isError: true }
+        }
+
+        try {
+          execFileSync('whisper', [filePath, '--output-format', 'txt', '--model', 'base', '--output-dir', '/tmp'], {
+            encoding: 'utf8', timeout: 60000,
+          })
+          const txtPath = `/tmp/${filePath.split('/').pop()!.replace(/\.[^.]+$/, '.txt')}`
+          const transcript = readFileSync(txtPath, 'utf8').trim()
+          return { content: [{ type: 'text', text: `[Voice transcript]: ${transcript}` }] }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { content: [{ type: 'text', text: `Transcription failed: ${msg}` }], isError: true }
+        }
       }
 
     default:
