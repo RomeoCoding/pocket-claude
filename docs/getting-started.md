@@ -60,6 +60,87 @@ DM your bot. You're now talking to Claude Code running 24/7 on your VM.
 
 ---
 
+## Team & Group Setup
+
+pocket-claude supports multiple users and Telegram groups sharing one Claude Code instance.
+
+### Adding team members
+
+Edit `~/.pocket-claude/access.json` on the VM:
+
+```json
+{
+  "allowFrom": ["your_telegram_id", "teammate_telegram_id"],
+  "roles": {
+    "your_telegram_id": "admin",
+    "teammate_telegram_id": "member"
+  }
+}
+```
+
+**Roles:**
+- `admin` — full access: switch sessions, delete, update, restart, manage roles
+- `member` — read/chat access: list sessions, search, preview, queue tasks, receive notifications
+
+Your own ID is set as `admin` automatically during install. Teammates get `member` by default.
+
+To promote someone from Telegram chat: `"set user 987654321 as admin"`
+
+### Using a Telegram Group
+
+1. Create a Telegram group and add your pocket-claude bot to it
+2. In **BotFather → your bot → Bot Settings → Group Privacy → Disable** (to receive all messages in the group), or leave **Enabled** for `@yourbot` mention-only responses
+3. Get the group's chat ID — send a message to the group, then open:
+   `https://api.telegram.org/bot<TOKEN>/getUpdates`
+   Look for `"chat":{"id":-100...}` — the negative number is the group ID
+4. Add the group to `~/.pocket-claude/access.json`:
+
+```json
+{
+  "allowFrom": ["your_id"],
+  "groups": { "-1001234567890": "my-team" }
+}
+```
+
+### Sending files
+
+Drop any file (PDF, image, code, document) directly into the Telegram chat — your bot will read and process it. The Telegram plugin downloads the attachment to the VM automatically. No manual upload steps.
+
+### Task queue
+
+Any team member can queue work for Claude to process asynchronously:
+
+> "Queue a task: Add dark mode to the dashboard"
+
+List pending tasks:
+
+> "List the queue"
+
+Claude works through the queue and notifies the requester on completion — even if they've closed Telegram.
+
+### Proactive notifications
+
+At the end of a long task, ask Claude to ping you:
+
+> "When you're done, notify me with a summary"
+
+You'll receive a Telegram message with the result — no polling needed.
+
+### Voice messages (optional)
+
+If installed with `bash install.sh --with-voice`, Claude will transcribe voice notes you send:
+
+1. Send a voice message to your bot
+2. Claude automatically calls `transcribe_voice` on the audio file
+3. The transcript is treated as your message and Claude responds normally
+
+To enable voice on an existing install:
+```bash
+bash /opt/pocket-claude/install.sh --with-voice
+```
+
+---
+
 ## Step 5: Close your laptop
 
 Your Claude Code session keeps running on the VM. Come back tomorrow, DM your bot, and pick up exactly where you left off.
