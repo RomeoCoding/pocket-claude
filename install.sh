@@ -519,6 +519,24 @@ else
   info "CLAUDE.md already has caller_id instruction — skipping"
 fi
 
+# Append turn management instruction to CLAUDE.md (idempotent)
+if ! sudo -u "$CLAUDE_USER" grep -q 'pocket-claude turn management' "$CLAUDE_MD" 2>/dev/null; then
+  sudo -u "$CLAUDE_USER" tee -a "$CLAUDE_MD" > /dev/null << 'CLAUDE_MD_EOF'
+
+## pocket-claude turn management
+On EVERY incoming Telegram message, before doing anything else:
+1. Call claim_turn with the sender's chat_id (caller_id) and their display name.
+2. If the result contains ok:false — immediately reply to the user:
+   "⏳ Claude is currently helping [holder_name]. Try again in ~[wait_min] min, or use queue_task to submit async work."
+   Then STOP. Do not process their request further.
+3. If ok:true — proceed with the user's request normally.
+4. After sending your final reply to the user, call release_turn with the same caller_id.
+CLAUDE_MD_EOF
+  info "Appended turn management instruction to $CLAUDE_MD"
+else
+  info "CLAUDE.md already has turn management instruction — skipping"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 section "Setup complete"

@@ -34,6 +34,7 @@ import { getUserRole, requireAdmin, setUserRole } from './roles.ts'
 import { sendMessage, broadcast } from './telegram.ts'
 import { queueTask, listQueue, completeTask, formatQueue } from './queue.ts'
 import { checkAndRecord, markWelcomed } from './seen_users.ts'
+import { claimTurn, releaseTurn, getTurnStatus } from './turn.ts'
 
 const TMUX_SESSION = process.env.POCKET_CLAUDE_TMUX ?? 'pocket-claude'
 const STATE_FILE = join(homedir(), '.pocket-claude', 'state.json')
@@ -276,6 +277,21 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         file_path: { type: 'string', description: 'Absolute path to the .ogg voice file on disk' },
         caller_id: { type: 'string', description: 'Your Telegram chat_id (optional)' },
       }, required: ['file_path'] },
+    },
+    {
+      name: 'claim_turn',
+      description: 'ALWAYS call this first before responding to any Telegram message. If ok:false, immediately tell the waiting user Claude is busy and stop — do not process their request.',
+      inputSchema: { type: 'object', properties: {
+        caller_id: { type: 'string', description: 'Telegram chat_id of the message sender' },
+        display_name: { type: 'string', description: 'Display name of the sender (for the blocked-user message)' },
+      }, required: ['caller_id'] },
+    },
+    {
+      name: 'release_turn',
+      description: 'Call this after sending your final reply. Releases the turn lock so the next user can be served.',
+      inputSchema: { type: 'object', properties: {
+        caller_id: { type: 'string', description: 'Telegram chat_id of the current turn holder' },
+      }, required: ['caller_id'] },
     },
   ],
 }))
@@ -600,6 +616,19 @@ async function handleTool(
           return { content: [{ type: 'text', text: `Transcription failed: ${msg}` }], isError: true }
         }
       }
+
+    case 'claim_turn': {
+      if (!callerId) return { content: [{ type: 'text', text: 'caller_id required.' }], isError: true }
+      const displayName = typeof args.display_name === 'string' ? args.display_name : callerId
+      const result = claimTurn(callerId, displayName)
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+    }
+
+    case 'release_turn': {
+      if (!callerId) return { content: [{ type: 'text', text: 'caller_id required.' }], isError: true }
+      releaseTurn(callerId)
+      return { content: [{ type: 'text', text: JSON.stringify({ ok: true }) }] }
+    }
 
     default:
       return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }

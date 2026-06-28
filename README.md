@@ -30,7 +30,7 @@ No API key. No per-token billing. Works with your **claude.ai Pro or Max** subsc
 | **Session memory** | List and resume any past conversation | Starts fresh every message |
 | **File access** | Full VM filesystem | None |
 | **Plugin** | Official `plugin:telegram@claude-plugins-official` | Third-party wrapper |
-| **Collaboration** | Multi-user allowlist + Telegram group mode | Single user |
+| **Collaboration** | Multi-user with roles, task queue, turn management | Single user |
 | **Skills** | Sync your custom skills to the shared VM | N/A |
 | **Privacy** | Your VM, your bot, nobody else's infra | Your messages hit the bot's server |
 | **Cost** | Free (Oracle Always Free tier) | API costs per token |
@@ -44,7 +44,13 @@ No API key. No per-token billing. Works with your **claude.ai Pro or Max** subsc
 - **Session memory** — list and resume past conversations from Telegram
 - **Full tool use** — bash, file read/write, web search, edit, glob — everything Claude Code supports
 - **Official plugin** — uses `plugin:telegram@claude-plugins-official`, not a third-party bridge
-- **Multi-user collaboration** — add teammates to the allowlist or use a shared Telegram group
+- **Team roles** — admin/member access control; `set_user_role` from Telegram chat
+- **Async task queue** — queue work, walk away, get pinged on Telegram when it's done
+- **Turn management** — fair queuing prevents one user from blocking the team; 10-min TTL auto-releases stale locks
+- **Proactive notifications** — Claude pings you when a long task finishes, no polling needed
+- **First-time onboarding** — new users get a welcome message automatically, once
+- **Voice transcription** — send voice notes; Claude transcribes via whisper (optional, `--with-voice`)
+- **File inbox** — drop any file into Telegram chat; Claude reads it directly
 - **Skills sync** — bring your custom Claude skills to the shared VM environment
 - **Multi-distro** — Ubuntu, Debian, Fedora, RHEL, AlmaLinux, Rocky, CentOS Stream
 - **Any hypervisor** — Oracle Cloud, AWS, GCP, Azure, DigitalOcean, VirtualBox, Proxmox, bare metal
@@ -108,6 +114,11 @@ curl -fsSL https://raw.githubusercontent.com/RomeoCoding/pocket-claude/master/in
 bash install.sh
 ```
 
+To enable voice transcription (adds whisper via pip):
+```bash
+bash install.sh --with-voice
+```
+
 > The installer is interactive — download it first, don't pipe directly to bash.
 
 **The installer (~5 min) will:**
@@ -133,49 +144,75 @@ DM your bot. That's it.
 | `resume session 3` | Restores session #3 with full context |
 | `start a new session` | Opens a fresh Claude conversation |
 | `what session am I in?` | Current session info and uptime |
+| `queue a task: <description>` | Adds async work to the queue; you get pinged when done |
+| `list the queue` | Shows pending, in-progress, and recently completed tasks |
+| `notify me when you're done` | Claude sends you a Telegram ping at end of task |
+| `handoff summary` | Structured summary of current work for a teammate |
+| Send a voice note | Claude transcribes it and responds (if `--with-voice` installed) |
+| Drop any file | Claude reads and processes it directly |
 
 ---
 
 ## Multi-user collaboration
 
-pocket-claude runs one persistent Claude Code session. Multiple people can share the same context — same conversation history, same open files, same project knowledge.
+pocket-claude runs one persistent Claude Code session. Multiple people share the same context — same conversation history, same open files, same project knowledge.
 
-**Option 1 — Individual DMs (separate threads, shared Claude process)**
+### Roles
 
-Add teammates' Telegram user IDs to the allowlist:
+The first user added during install is automatically set to `admin`. Others default to `member`.
 
-```bash
-# SSH into the VM, then:
-sudo -u claude nano /home/claude/.claude/channels/telegram/access.json
-```
+| Tool | admin | member |
+|---|---|---|
+| Chat, list sessions, search, preview | ✅ | ✅ |
+| Queue tasks, get notified, handoff summary | ✅ | ✅ |
+| New session, restart, delete, update | ✅ | ❌ |
+| `set_user_role` | ✅ | ❌ |
+
+Grant admin from Telegram chat: *"set user 987654321 as admin"*
+
+### Turn management (starvation prevention)
+
+Claude processes one user at a time. When a second user sends a message while Claude is busy, they get an immediate reply:
+
+> ⏳ Claude is currently helping Alice. Try again in ~3 min, or use `queue_task` to submit async work.
+
+The turn lock has a 10-minute TTL — a crashed or stalled session auto-expires, so one user can never permanently block the team.
+
+### Async task queue
+
+For long-running work, queue it and walk away:
+
+> "Queue a task: migrate the database schema to add soft deletes"
+
+Claude works through the queue and notifies the requester on Telegram when done — no polling needed. List the queue with *"list the queue"*, check status, and receive a ping with a completion note.
+
+### Adding teammates
+
+Edit `~/.pocket-claude/access.json` on the VM:
 
 ```json
 {
-  "dmPolicy": "allowlist",
-  "allowFrom": ["111111111", "222222222", "333333333"],
-  "groups": {},
-  "pending": {}
+  "allowFrom": ["your_id", "teammate_id"],
+  "roles": {
+    "your_id": "admin",
+    "teammate_id": "member"
+  }
 }
 ```
 
-Each person DMs the bot privately. Messages interleave in the same running session.
+### Telegram Group
 
-**Option 2 — Telegram Group (one shared thread)**
-
-1. Create a Telegram group and add your bot to it
-2. Get the group's chat ID (send a message, then check `https://api.telegram.org/bot<token>/getUpdates`)
-3. Add the group ID to `access.json`:
+1. Add your bot to a Telegram group
+2. In BotFather → Bot Settings → **Group Privacy → Disable** (to receive all messages), or leave **Enabled** for `@mention`-only
+3. Get the group chat ID from `https://api.telegram.org/bot<token>/getUpdates` (negative number)
+4. Add to `access.json`:
 
 ```json
 {
-  "dmPolicy": "allowlist",
-  "allowFrom": ["111111111"],
-  "groups": { "-1001234567890": { "policy": "allow" } },
-  "pending": {}
+  "allowFrom": ["your_id"],
+  "groups": { "-1001234567890": "my-team" }
 }
 ```
-
-Everyone in the group now shares one conversation thread with full shared context. Ideal for teams working on the same project.
 
 ---
 
@@ -250,8 +287,14 @@ pocket-claude/
 │   ├── watchdog.sh                 # Health check + Oracle keep-alive (cron)
 │   └── pocket-claude.service       # systemd unit
 ├── session-manager/
-│   ├── server.ts                   # MCP server: list / resume / new / status
+│   ├── server.ts                   # MCP server: 22 tools (sessions + team + queue + voice)
 │   ├── sessions.ts                 # Reads ~/.claude/projects/ JSONL files
+│   ├── roles.ts                    # Role enforcement (admin/member)
+│   ├── telegram.ts                 # Proactive Telegram notifications
+│   ├── queue.ts                    # Persistent task queue (JSONL)
+│   ├── seen_users.ts               # First-contact onboarding tracking
+│   ├── turn.ts                     # Turn lock — concurrent-user starvation prevention
+│   ├── tests/                      # 30 unit tests (node:test)
 │   ├── package.json
 │   └── tsconfig.json
 ├── security/
