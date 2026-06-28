@@ -226,10 +226,10 @@ Claude Code skills are custom prompt workflows stored in `~/.claude/skills/`. Yo
 bash scripts/sync-skills.sh ubuntu@<vm-ip>
 
 # Sync a specific directory
-bash scripts/sync-skills.sh ubuntu@<vm-ip> ~/my-project-skills
+bash scripts/sync-skills.sh ubuntu@<vm-ip> ~/<directory_with_skills>
 
 # Remove a skill from the VM
-bash scripts/sync-skills.sh ubuntu@<vm-ip> --remove brand-identity
+bash scripts/sync-skills.sh ubuntu@<vm-ip> --remove <skill_name>
 ```
 
 **Windows (PowerShell):**
@@ -238,10 +238,10 @@ bash scripts/sync-skills.sh ubuntu@<vm-ip> --remove brand-identity
 .\scripts\sync-skills.ps1 -Remote ubuntu@<vm-ip>
 
 # Sync a specific directory
-.\scripts\sync-skills.ps1 -Remote ubuntu@<vm-ip> -SkillsDir C:\my-skills
+.\scripts\sync-skills.ps1 -Remote ubuntu@<vm-ip> -SkillsDir C:\<directory_with_skills>
 
 # Remove a skill from the VM
-.\scripts\sync-skills.ps1 -Remote ubuntu@<vm-ip> -Remove brand-identity
+.\scripts\sync-skills.ps1 -Remote ubuntu@<vm-ip> -Remove <skill_name>
 ```
 
 After syncing, restart the service to pick up the new skills:
