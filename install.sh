@@ -29,6 +29,11 @@ warn()    { echo -e "${YELLOW}WARN:${NC} $*"; }
 error()   { echo -e "${RED}ERROR:${NC} $*" >&2; exit 1; }
 section() { echo -e "\n${BOLD}── $* ──${NC}"; }
 
+WITH_VOICE=false
+for arg in "$@"; do
+  [[ "$arg" == "--with-voice" ]] && WITH_VOICE=true
+done
+
 # ── Preflight checks ─────────────────────────────────────────────────────────
 
 section "Preflight"
@@ -529,6 +534,20 @@ if [[ "${PLUGIN_AUTO:-false}" == "true" ]]; then
 else
   echo -e "${YELLOW}ACTION REQUIRED — install the Telegram plugin manually:${NC}"
   echo ""
+fi
+
+if [[ "$WITH_VOICE" == "true" ]]; then
+  info "Installing whisper for voice transcription..."
+  if command -v pip3 &>/dev/null; then
+    pip3 install --quiet openai-whisper
+    if command -v whisper &>/dev/null; then
+      info "whisper installed. Voice transcription enabled."
+    else
+      warn "whisper install may have failed. Check: pip3 show openai-whisper"
+    fi
+  else
+    warn "pip3 not found — skipping voice install. Install python3-pip and re-run with --with-voice."
+  fi
 fi
 
 echo "  Manual plugin install (if needed):"
