@@ -54,15 +54,16 @@ test('requireAdmin returns ok for admin', async () => {
 })
 
 test('requireAdmin returns error for member', async () => {
-  const { requireAdmin } = await import('../roles.ts')
+  const { requireAdmin, ERR_ADMIN_REQUIRED } = await import('../roles.ts')
   writeAccess({ roles: { '222': 'member' } })
   const result = requireAdmin('222')
   assert.equal(result.ok, false)
-  assert.ok((result as { ok: false; error: string }).error.includes('admin'))
+  assert.equal((result as { ok: false; error: string }).error, ERR_ADMIN_REQUIRED)
 })
 
 test('requireAdmin returns error when callerId is undefined', async () => {
-  const { requireAdmin } = await import('../roles.ts')
+  const { requireAdmin, ERR_CALLER_ID_MISSING } = await import('../roles.ts')
   const result = requireAdmin(undefined)
   assert.equal(result.ok, false)
+  assert.equal((result as { ok: false; error: string }).error, ERR_CALLER_ID_MISSING)
 })

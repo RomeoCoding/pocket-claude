@@ -74,3 +74,73 @@ test('formatQueue returns empty message for empty list', async () => {
   const { formatQueue } = await import('../queue.ts')
   assert.equal(formatQueue([]), '(queue is empty)')
 })
+
+test('queueTask with run_after stores the field correctly', async () => {
+  const { queueTask, getTask } = await import('../queue.ts')
+  const runAfter = new Date(Date.now() + 60_000).toISOString()
+  const task = queueTask('future task', 'normal', 'u1', runAfter)
+  assert.equal(task.run_after, runAfter)
+  const found = getTask(task.id)
+  assert.equal(found!.run_after, runAfter)
+})
+
+test('listDueTasks returns tasks with run_after in the past', async () => {
+  const { queueTask, listDueTasks } = await import('../queue.ts')
+  const pastTime = new Date(Date.now() - 60_000).toISOString()
+  queueTask('past task', 'normal', 'u1', pastTime)
+  const due = listDueTasks()
+  assert.equal(due.length, 1)
+  assert.equal(due[0].description, 'past task')
+})
+
+test('listDueTasks does not return tasks with future run_after', async () => {
+  const { queueTask, listDueTasks } = await import('../queue.ts')
+  const futureTime = new Date(Date.now() + 60_000).toISOString()
+  queueTask('future task', 'normal', 'u1', futureTime)
+  const due = listDueTasks()
+  assert.equal(due.length, 0)
+})
+
+test('listDueTasks does not return already-notified tasks', async () => {
+  const { queueTask, listDueTasks, markTaskNotified } = await import('../queue.ts')
+  const pastTime = new Date(Date.now() - 60_000).toISOString()
+  const task = queueTask('already notified', 'normal', 'u1', pastTime)
+  markTaskNotified(task.id)
+  const due = listDueTasks()
+  assert.equal(due.length, 0)
+})
+
+test('listDueTasks returns tasks with no run_after set', async () => {
+  const { queueTask, listDueTasks } = await import('../queue.ts')
+  queueTask('immediate task', 'normal', 'u1')
+  const due = listDueTasks()
+  assert.equal(due.length, 1)
+  assert.equal(due[0].description, 'immediate task')
+})
+
+test('markTaskNotified sets notified_at on the correct task', async () => {
+  const { queueTask, markTaskNotified, getTask } = await import('../queue.ts')
+  const task = queueTask('to be notified', 'normal', 'u1')
+  assert.equal(task.notified_at, undefined)
+  markTaskNotified(task.id)
+  const found = getTask(task.id)
+  assert.ok(found!.notified_at !== undefined)
+  assert.ok(new Date(found!.notified_at!).getTime() <= Date.now())
+})
+
+test('formatQueue shows [⏰ DUE] for overdue tasks', async () => {
+  const { queueTask, formatQueue } = await import('../queue.ts')
+  const pastTime = new Date(Date.now() - 60_000).toISOString()
+  const task = queueTask('overdue task', 'normal', 'u1', pastTime)
+  const output = formatQueue([task])
+  assert.ok(output.includes('[⏰ DUE]'))
+})
+
+test('formatQueue shows [scheduled: HH:MM UTC] for future tasks', async () => {
+  const { queueTask, formatQueue } = await import('../queue.ts')
+  const futureTime = new Date(Date.now() + 3_600_000).toISOString()
+  const task = queueTask('future task', 'normal', 'u1', futureTime)
+  const output = formatQueue([task])
+  assert.ok(output.includes('[scheduled:'))
+  assert.ok(output.includes('UTC]'))
+})

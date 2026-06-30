@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 # Rotate the Telegram bot token.
 # Run this if your token is ever exposed or you suspect compromise.
-# Steps: 1) get new token from BotFather, 2) run this script with it.
+# Steps: 1) get new token from BotFather, 2) run this script.
+#
+# Usage (two equivalent forms):
+#   bash rotate-token.sh                    # prompts for input interactively
+#   echo "TOKEN" | bash rotate-token.sh    # non-interactive / scripted
+#
+# NEVER pass the token as a command-line argument — it appears in shell history
+# and in /proc/<pid>/cmdline while the script is running.
 set -euo pipefail
 
 ENV_FILE="$HOME/.claude/channels/telegram/.env"
 
-if [[ -z "${1:-}" ]]; then
-  echo "Usage: bash rotate-token.sh <new-token-from-botfather>"
-  echo ""
-  echo "Get a new token: open Telegram → @BotFather → /revoke → /token"
-  exit 1
+# Read token from stdin to keep it out of shell history and process listings
+if [[ -t 0 ]]; then
+  # Interactive terminal: prompt without echo
+  read -rsp "New bot token (from @BotFather): " NEW_TOKEN
+  echo
+else
+  # Non-interactive: read from stdin pipe
+  read -r NEW_TOKEN
 fi
 
-NEW_TOKEN="$1"
+if [[ -z "${NEW_TOKEN:-}" ]]; then
+  echo "ERROR: No token provided." >&2
+  exit 1
+fi
 
 if [[ ! "$NEW_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{35,}$ ]]; then
   echo "ERROR: Token format looks wrong. Expected: 123456789:AAH..." >&2

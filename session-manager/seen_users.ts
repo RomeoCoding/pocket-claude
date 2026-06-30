@@ -1,7 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
-import { mkdirSync } from 'node:fs'
 
 type UserRecord = { first_seen: string; welcomed: boolean }
 type SeenUsers = Record<string, UserRecord>
@@ -15,7 +14,10 @@ function read(): SeenUsers {
 
 function write(data: SeenUsers): void {
   mkdirSync(dirname(SEEN_FILE), { recursive: true })
-  writeFileSync(SEEN_FILE, JSON.stringify(data, null, 2), { mode: 0o600 })
+  // Write via tmp+rename so readers never see a partial file
+  const tmp = `${SEEN_FILE}.tmp.${process.pid}`
+  writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
+  renameSync(tmp, SEEN_FILE)
 }
 
 // Returns true if this user has not been welcomed yet.
@@ -31,8 +33,12 @@ export function checkAndRecord(userId: string): { needsWelcome: boolean } {
 
 export function markWelcomed(userId: string): void {
   const data = read()
-  if (data[userId]) {
+  // Upsert: if the user record doesn't exist yet (shouldn't happen in normal flow
+  // but possible if checkAndRecord and markWelcomed race), create it as already welcomed.
+  if (!data[userId]) {
+    data[userId] = { first_seen: new Date().toISOString(), welcomed: true }
+  } else {
     data[userId].welcomed = true
-    write(data)
   }
+  write(data)
 }
