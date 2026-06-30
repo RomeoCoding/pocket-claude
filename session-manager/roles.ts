@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 export type Role = 'admin' | 'member'
 
 const ACCESS_FILE =
-  process.env._PC_ACCESS_FILE ?? join(homedir(), '.pocket-claude', 'access.json')
+  process.env._PC_ACCESS_FILE ?? join(homedir(), '.claude', 'channels', 'telegram', 'access.json')
 
 function readAccess(): Record<string, unknown> {
   try { return JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) } catch { return {} }

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Ubuntu 22.04+ VM (Oracle Cloud Free Tier, DigitalOcean, Hetzner, etc.)
+- Ubuntu 20.04+ VM (Oracle Cloud Free Tier, DigitalOcean, Hetzner, etc.)
 - A Telegram account
 - A claude.ai subscription (Pro or Max — no API key needed)
 - SSH access to your VM
@@ -37,19 +37,17 @@ Total install time: ~5 minutes.
 
 ---
 
-## Step 3: Pair your Telegram account
+## Step 3: Start chatting
 
-When you first DM your bot, Claude Code will ask you to confirm your Telegram ID and approve the pairing. This happens automatically — just send any message to your bot and follow the prompt that appears in your SSH session.
+DM your bot. Your Telegram user ID was added to the allowlist during install. Only IDs in `~/.claude/channels/telegram/access.json` on the VM can interact with Claude — unknown IDs are silently dropped.
 
-Your Telegram user ID is stored in `~/.claude/channels/telegram/access.json` on the VM. Only IDs in the allowlist can interact with Claude.
+If you need to add more users, see the Team & Group Setup section below.
 
 ---
 
-## Step 4: Start chatting
+## Step 4: Session commands
 
-DM your bot. You're now talking to Claude Code running 24/7 on your VM.
-
-**Session commands you can use in chat:**
+**Things to say in Telegram chat:**
 
 | What you say | What happens |
 |--------------|--------------|
@@ -66,7 +64,7 @@ pocket-claude supports multiple users and Telegram groups sharing one Claude Cod
 
 ### Adding team members
 
-Edit `~/.pocket-claude/access.json` on the VM:
+Edit `~/.claude/channels/telegram/access.json` on the VM:
 
 ```json
 {
@@ -93,7 +91,7 @@ To promote someone from Telegram chat: `"set user 987654321 as admin"`
 3. Get the group's chat ID — send a message to the group, then open:
    `https://api.telegram.org/bot<TOKEN>/getUpdates`
    Look for `"chat":{"id":-100...}` — the negative number is the group ID
-4. Add the group to `~/.pocket-claude/access.json`:
+4. Add the group to `~/.claude/channels/telegram/access.json`:
 
 ```json
 {

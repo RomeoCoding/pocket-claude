@@ -22,13 +22,13 @@ after(() => {
 
 test('getBotToken reads token from .env', async () => {
   const { getBotToken } = await import('../telegram.ts')
-  writeFileSync(ENV_FILE, 'TELEGRAM_TOKEN=abc123\nOTHER=value\n')
+  writeFileSync(ENV_FILE, 'TELEGRAM_BOT_TOKEN=abc123\nOTHER=value\n')
   assert.equal(getBotToken(), 'abc123')
 })
 
 test('getBotToken handles token with = in value', async () => {
   const { getBotToken } = await import('../telegram.ts')
-  writeFileSync(ENV_FILE, 'TELEGRAM_TOKEN=abc=def==\n')
+  writeFileSync(ENV_FILE, 'TELEGRAM_BOT_TOKEN=abc=def==\n')
   assert.equal(getBotToken(), 'abc=def==')
 })
 

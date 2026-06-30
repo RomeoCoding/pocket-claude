@@ -3,15 +3,15 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 
 const ENV_FILE =
-  process.env._PC_ENV_FILE ?? join(homedir(), '.pocket-claude', '.env')
+  process.env._PC_ENV_FILE ?? join(homedir(), '.claude', 'channels', 'telegram', '.env')
 const ACCESS_FILE =
-  process.env._PC_ACCESS_FILE ?? join(homedir(), '.pocket-claude', 'access.json')
+  process.env._PC_ACCESS_FILE ?? join(homedir(), '.claude', 'channels', 'telegram', 'access.json')
 
 export function getBotToken(): string {
   try {
     for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
       const eq = line.indexOf('=')
-      if (eq > 0 && line.slice(0, eq).trim() === 'TELEGRAM_TOKEN') {
+      if (eq > 0 && line.slice(0, eq).trim() === 'TELEGRAM_BOT_TOKEN') {
         return line.slice(eq + 1).trim()
       }
     }

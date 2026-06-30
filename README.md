@@ -188,7 +188,7 @@ Claude works through the queue and notifies the requester on Telegram when done 
 
 ### Adding teammates
 
-Edit `~/.pocket-claude/access.json` on the VM:
+Edit `~/.claude/channels/telegram/access.json` on the VM:
 
 ```json
 {
@@ -205,7 +205,7 @@ Edit `~/.pocket-claude/access.json` on the VM:
 1. Add your bot to a Telegram group
 2. In BotFather → Bot Settings → **Group Privacy → Disable** (to receive all messages), or leave **Enabled** for `@mention`-only
 3. Get the group chat ID from `https://api.telegram.org/bot<token>/getUpdates` (negative number)
-4. Add to `access.json`:
+4. Add the group to `~/.claude/channels/telegram/access.json`:
 
 ```json
 {

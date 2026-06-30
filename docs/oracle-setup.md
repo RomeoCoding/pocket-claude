@@ -74,7 +74,7 @@ The installer will:
 
 ## 6. Oracle idle-VM protection
 
-Oracle has a policy of reclaiming Always Free VMs that appear idle. pocket-claude's watchdog handles this: it runs every minute via cron and writes a `.keepalive` file to disk, which signals activity to Oracle's monitoring.
+Oracle has a policy of reclaiming Always Free VMs that appear idle. pocket-claude's watchdog handles this: it runs every minute via cron and makes an outbound HTTPS request to Cloudflare DNS (`1.1.1.1`), generating the network traffic Oracle monitors to assess activity.
 
 No additional configuration needed — this is built in.
 

@@ -50,6 +50,10 @@ The only inbound port is SSH (22), protected by key auth and fail2ban.
 | `~/.claude/settings.json` | 600 | claude |
 | `~/.pocket-claude/` | 700 | claude |
 | `~/.pocket-claude/resume_next` | 600 | claude |
+| `~/.pocket-claude/turn.lock` | 600 | claude |
+| `~/.pocket-claude/queue.jsonl` | 600 | claude |
+| `~/.pocket-claude/seen_users.json` | 600 | claude |
+| `~/.pocket-claude/pinned.json` | 600 | claude |
 | `/opt/pocket-claude/` | 755 | root:root |
 
 ---

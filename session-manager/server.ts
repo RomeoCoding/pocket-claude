@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
- * pocket-claude session manager — MCP server
+ * pocket-claude session manager — MCP server (22 tools)
  *
- * Tools: list_sessions, resume_session, preview_session, new_session,
- *        restart_session, get_status, what_am_i_working_on, get_logs,
- *        search_sessions, pin_session, unpin_session,
- *        delete_sessions, update_pocket_claude
+ * Session:      list_sessions, search_sessions, resume_session, preview_session,
+ *               pin_session, unpin_session, new_session, restart_session,
+ *               delete_sessions, get_status, what_am_i_working_on, get_logs,
+ *               update_pocket_claude
+ * Team:         set_user_role, handoff_summary
+ * Async:        notify_user, queue_task, list_queue, complete_task
+ * Voice:        transcribe_voice
+ * Turn:         claim_turn, release_turn
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
